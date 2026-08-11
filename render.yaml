@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: library-tour-planner
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: SHEET_ID
+        value: 1R0h8KZLz3fKsEYEb4PHDNwzQGD75Lc7qVrFk4I_aDy4
+      - key: LIBRARY_SHEET_NAME
+        value: Sheet1
+      - key: HOLIDAY_SHEET_NAME
+        value: HOLIDAYS
