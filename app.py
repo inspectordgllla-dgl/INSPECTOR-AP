@@ -2,6 +2,7 @@ import os
 import re
 import calendar
 import unicodedata
+from urllib.parse import quote
 from datetime import datetime, date
 
 import pandas as pd
@@ -372,11 +373,21 @@ def planned_letter_generate(year, month):
     db.session.commit()
 
     pdf_bytes = generate_permission_letter_pdf(plan)
-    filename = f"utthesa-payanam-{TAMIL_MONTHS[month]}-{year}.pdf".replace(" ", "-")
+    # HTTP header-களில் ASCII அல்லாத (தமிழ்) எழுத்துக்களை நேரடியாகப் பயன்படுத்த
+    # முடியாது (Invalid HTTP Header எரர் தரும்). ஆகவே பதிவிறக்கும் கோப்புப் பெயருக்கு
+    # ஆங்கில/எண் அடிப்படையிலான ASCII பெயரையும், UI-ல் காட்ட விரும்பினால் தமிழ்ப்
+    # பெயரையும் RFC 5987 filename* முறையில் தனியாகக் கொடுக்கிறோம்.
+    ascii_filename = f"utthesa-payanam-{year}-{month:02d}.pdf"
+    tamil_filename = f"utthesa-payanam-{TAMIL_MONTHS[month]}-{year}.pdf".replace(" ", "-")
+    encoded_tamil_filename = quote(tamil_filename)
+    content_disposition = (
+        f"attachment; filename={ascii_filename}; "
+        f"filename*=UTF-8''{encoded_tamil_filename}"
+    )
     return Response(
         pdf_bytes,
         mimetype="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": content_disposition},
     )
 
 
