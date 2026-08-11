@@ -11,7 +11,7 @@
 
 {% if next_pending %}
 <div class="card">
-  <h3>{{ next_pending.strftime('%d-%m-%Y') }} ({{ TAMIL_WEEKDAYS_FULL[next_pending.weekday()] }}) — பணியிடம் பதிவு</h3>
+  <h3>{{ next_pending.strftime('%d-%m-%Y') }} ({{ ['திங்கள்','செவ்வாய்','புதன்','வியாழன்','வெள்ளி','சனி','ஞாயிறு'][next_pending.weekday()] }}) — பணியிடம் பதிவு</h3>
   <form method="post" action="{{ url_for('planned_save_day', year=year, month=month) }}">
     <input type="hidden" name="day_date" value="{{ next_pending.isoformat() }}">
     <label>பணியிடம்</label>
@@ -58,7 +58,7 @@
     {% for d in filled_days %}
     <tr class="{{ 'holiday' if d.day_type == 'government_holiday' else 'weekly-off' if d.day_type == 'weekly_off' else 'second-saturday' if d.day_type == 'second_saturday' else '' }}">
       <td>{{ d.day_date.strftime('%d-%m-%Y') }}</td>
-      <td>{{ TAMIL_WEEKDAY_FULL_MAP.get(d.weekday, d.weekday) }}</td>
+      <td>{{ d.weekday }}</td>
       <td>{{ d.place_display }}</td>
       <td>
         {% if d.day_type == 'work' %}

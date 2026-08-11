@@ -83,20 +83,8 @@ class TourPlanDay(db.Model):
 with app.app_context():
     db.create_all()
 
-# templates நேரடியாக கிழமை பெயர்களை (சரியான புணர்ச்சி வடிவில்) பயன்படுத்த
-app.jinja_env.globals["TAMIL_WEEKDAYS_FULL"] = TAMIL_WEEKDAYS_FULL
-app.jinja_env.globals["TAMIL_WEEKDAY_FULL_MAP"] = TAMIL_WEEKDAY_FULL_MAP
-
 
 TAMIL_WEEKDAYS = ["திங்கள்", "செவ்வாய்", "புதன்", "வியாழன்", "வெள்ளி", "சனி", "ஞாயிறு"]
-
-# "கிழமை" ஒட்டும்போது சரியான புணர்ச்சி விதிப்படி மாறும் முழு வடிவங்கள் —
-# (எ.கா. "செவ்வாய்" + "கிழமை" -> "செவ்வாய்க்கிழமை", வெறும் இணைப்பு அல்ல).
-TAMIL_WEEKDAYS_FULL = [
-    "திங்கட்கிழமை", "செவ்வாய்க்கிழமை", "புதன்கிழமை", "வியாழக்கிழமை",
-    "வெள்ளிக்கிழமை", "சனிக்கிழமை", "ஞாயிற்றுக்கிழமை",
-]
-TAMIL_WEEKDAY_FULL_MAP = dict(zip(TAMIL_WEEKDAYS, TAMIL_WEEKDAYS_FULL))
 
 TAMIL_MONTHS = {
     1: "ஜனவரி", 2: "பிப்ரவரி", 3: "மார்ச்", 4: "ஏப்ரல்", 5: "மே", 6: "ஜூன்",
@@ -548,13 +536,11 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
     for d in plan.days:
         table_data.append([
             T(d.day_date.strftime("%d.%m.%Y"), size=10, leading=13),
-            T(TAMIL_WEEKDAY_FULL_MAP.get(d.weekday, d.weekday), size=10, leading=13),
+            T(d.weekday, size=10, leading=13),
             T(d.place_display, size=10, leading=13),
         ])
 
-    # கிழமை நெடுவரிசைக்கு அகலம் அதிகரிக்கப்பட்டது ("செவ்வாய்க்கிழமை" போன்ற
-    # முழு வடிவங்கள் wrap ஆகாமல் ஒரே வரியில் வர).
-    plan_table = Table(table_data, colWidths=[25 * mm, 38 * mm, doc.width - 63 * mm], repeatRows=1)
+    plan_table = Table(table_data, colWidths=[28 * mm, 26 * mm, doc.width - 54 * mm], repeatRows=1)
     plan_table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),

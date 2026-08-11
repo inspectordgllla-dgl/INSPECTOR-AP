@@ -2,7 +2,7 @@
 {% block content %}
 <div class="card">
   <h2>{{ month_name }} - {{ year }} — நாள் பதிவைத் திருத்து</h2>
-  <h3>{{ day.day_date.strftime('%d-%m-%Y') }} ({{ TAMIL_WEEKDAY_FULL_MAP.get(day.weekday, day.weekday) }})</h3>
+  <h3>{{ day.day_date.strftime('%d-%m-%Y') }} ({{ day.weekday }})</h3>
 
   <form method="post" action="{{ url_for('planned_edit_day_save', year=year, month=month, day_id=day.id) }}">
     <label>பணியிடம்</label>
