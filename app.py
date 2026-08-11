@@ -1,7 +1,5 @@
 import os
-import re
 import calendar
-import unicodedata
 from urllib.parse import quote
 from datetime import datetime, date
 
@@ -12,13 +10,9 @@ from flask_sqlalchemy import SQLAlchemy
 from reportlab.lib.pagesizes import legal, portrait
 from reportlab.lib.units import mm
 from reportlab.lib import colors
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-)
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle
+
+from tamil_text import TamilText
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dindigul-library-tour-planner-dev-key")
@@ -32,7 +26,7 @@ LIBRARY_SHEET_NAME = os.environ.get("LIBRARY_SHEET_NAME", "Sheet1")
 HOLIDAY_SHEET_NAME = os.environ.get("HOLIDAY_SHEET_NAME", "HOLIDAYS")
 
 # கடிதத்தில் நிரந்தரமாகத் தோன்றும் விவரங்கள் — தேவைப்பட்டால் இங்கே மாற்றிக்கொள்ளவும்.
-LETTER_SENDER_NAME = os.environ.get("LETTER_SENDER_NAME", "திருமதி.சு.வள்ளி")
+LETTER_SENDER_NAME = os.environ.get("LETTER_SENDER_NAME", "திரு.மு.லெ.முத்து")
 LETTER_SENDER_DESIGNATION = os.environ.get("LETTER_SENDER_DESIGNATION", "நூலக ஆய்வாளர்")
 LETTER_SENDER_OFFICE_LINE1 = os.environ.get("LETTER_SENDER_OFFICE_LINE1", "மாவட்ட நூலக அலுவலகம்,")
 LETTER_SENDER_OFFICE_LINE2 = os.environ.get("LETTER_SENDER_OFFICE_LINE2", "திண்டுக்கல் – 624 003")
@@ -415,24 +409,15 @@ def reports_placeholder():
 # ---------------------------------------------------------------------------
 # PDF LETTER GENERATION
 # ---------------------------------------------------------------------------
+# NOTE: ReportLab has no Indic text-shaping engine (no GSUB/GPOS), so it draws
+# Tamil glyphs in raw Unicode order — vowel signs land in the wrong spot and
+# consonant+vowel-sign ligatures fall back to the wrong shape. tamil_text.py
+# shapes Tamil correctly with HarfBuzz + FreeType and draws it as a crisp
+# raster image via the TamilText Flowable (drop-in replacement for Paragraph
+# wherever Tamil script is involved). It reuses these same font files.
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
-pdfmetrics.registerFont(TTFont("TamilRegular", os.path.join(FONT_DIR, "NotoSansTamil-Regular.ttf")))
-pdfmetrics.registerFont(TTFont("TamilBold", os.path.join(FONT_DIR, "NotoSansTamil-Bold.ttf")))
-
-_PREBASE_MARKS = "\u0bc6\u0bc7\u0bc8"  # ெ ே ை — Tamil vowel signs that render BEFORE their base consonant
-
-
-def tamilfix(text: str) -> str:
-    """ReportLab draws glyphs in raw Unicode order with no Indic shaping engine,
-    so pre-base Tamil vowel signs (and the split matras ொ/ோ/ௌ that decompose to
-    one) show up after the consonant instead of before it. This reorders the
-    text so the naive left-to-right glyph layout comes out visually correct.
-    Only ever used for PDF text — HTML already shapes Tamil correctly in-browser."""
-    if not text:
-        return text
-    text = unicodedata.normalize("NFD", text)
-    text = re.sub(f"(.)([{_PREBASE_MARKS}])", r"\2\1", text)
-    return text
+FONT_REGULAR = os.path.join(FONT_DIR, "NotoSansTamil-Regular.ttf")
+FONT_BOLD = os.path.join(FONT_DIR, "NotoSansTamil-Bold.ttf")
 
 
 def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
@@ -446,31 +431,21 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
         leftMargin=20 * mm, rightMargin=20 * mm,
     )
 
-    style_title = ParagraphStyle("title", fontName="TamilBold", fontSize=14, alignment=TA_CENTER, spaceAfter=14)
-    style_normal = ParagraphStyle("normal", fontName="TamilRegular", fontSize=11, leading=16, alignment=TA_LEFT)
-    style_right = ParagraphStyle("right", fontName="TamilRegular", fontSize=11, leading=16, alignment=TA_RIGHT)
-    style_subject = ParagraphStyle("subject", fontName="TamilRegular", fontSize=11, leading=16, alignment=TA_JUSTIFY)
-    style_cell = ParagraphStyle("cell", fontName="TamilRegular", fontSize=10, leading=13, alignment=TA_LEFT)
-    style_cell_header = ParagraphStyle("cellh", fontName="TamilBold", fontSize=10, leading=13, alignment=TA_CENTER)
+    def T(text, font=FONT_REGULAR, size=11, leading=16, align="left", space_after=0):
+        return TamilText(text, font, size, leading_pt=leading, align=align, space_after=space_after)
 
     story = []
-    story.append(Paragraph(tamilfix("பொது நூலகத் துறை"), style_title))
+    story.append(T("பொது நூலகத் துறை", font=FONT_BOLD, size=14, leading=18, align="center", space_after=14))
 
     header_table = Table(
         [[
-            Paragraph(
-                tamilfix(
-                    f"அனுப்புநர்<br/>{LETTER_SENDER_NAME},<br/>{LETTER_SENDER_DESIGNATION},<br/>"
-                    f"{LETTER_SENDER_OFFICE_LINE1}<br/>{LETTER_SENDER_OFFICE_LINE2}"
-                ),
-                style_normal,
+            T(
+                f"அனுப்புநர்<br/>{LETTER_SENDER_NAME},<br/>{LETTER_SENDER_DESIGNATION},<br/>"
+                f"{LETTER_SENDER_OFFICE_LINE1}<br/>{LETTER_SENDER_OFFICE_LINE2}"
             ),
-            Paragraph(
-                tamilfix(
-                    f"பெறுநர்<br/>{LETTER_RECEIVER_DESIGNATION},<br/>"
-                    f"{LETTER_RECEIVER_OFFICE_LINE1}<br/>{LETTER_RECEIVER_OFFICE_LINE2}"
-                ),
-                style_normal,
+            T(
+                f"பெறுநர்<br/>{LETTER_RECEIVER_DESIGNATION},<br/>"
+                f"{LETTER_RECEIVER_OFFICE_LINE1}<br/>{LETTER_RECEIVER_OFFICE_LINE2}"
             ),
         ]],
         colWidths=[doc.width / 2.0, doc.width / 2.0],
@@ -483,31 +458,31 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
     story.append(header_table)
     story.append(Spacer(1, 14))
 
-    ref_line = tamilfix(f"ப.வெ.எண்.{plan.file_number or '____'}, நாள். {plan.letter_date or '__________'}")
-    story.append(Paragraph(ref_line, style_normal))
+    ref_line = f"ப.வெ.எண்.{plan.file_number or '____'}, நாள். {plan.letter_date or '__________'}"
+    story.append(T(ref_line))
     story.append(Spacer(1, 14))
 
-    story.append(Paragraph(tamilfix("ஐயா,"), style_normal))
+    story.append(T("ஐயா,"))
     story.append(Spacer(1, 10))
 
-    subject = tamilfix(
+    subject = (
         f"பொருள் : உத்தேசப் பயணத் திட்டம் – திண்டுக்கல் மாவட்ட நூலக ஆணைக்குழு – "
         f"{LETTER_SENDER_NAME} – {LETTER_SENDER_DESIGNATION} – {TAMIL_MONTHS[plan.month]} – {plan.year} "
         f"மாதத்திற்கான உத்தேச பயணத் திட்டம் சமர்ப்பித்தல் – சார்பு"
     )
-    story.append(Paragraph(subject, style_subject))
+    story.append(T(subject))
     story.append(Spacer(1, 14))
 
     table_data = [[
-        Paragraph(tamilfix("நாள்"), style_cell_header),
-        Paragraph(tamilfix("கிழமை"), style_cell_header),
-        Paragraph(tamilfix("பணியிடம்"), style_cell_header),
+        T("நாள்", font=FONT_BOLD, size=10, leading=13, align="center"),
+        T("கிழமை", font=FONT_BOLD, size=10, leading=13, align="center"),
+        T("பணியிடம்", font=FONT_BOLD, size=10, leading=13, align="center"),
     ]]
     for d in plan.days:
         table_data.append([
-            Paragraph(d.day_date.strftime("%d.%m.%Y"), style_cell),
-            Paragraph(tamilfix(f"{d.weekday}கிழமை"), style_cell),
-            Paragraph(tamilfix(d.place_display), style_cell),
+            T(d.day_date.strftime("%d.%m.%Y"), size=10, leading=13),
+            T(f"{d.weekday}கிழமை", size=10, leading=13),
+            T(d.place_display, size=10, leading=13),
         ])
 
     plan_table = Table(table_data, colWidths=[28 * mm, 30 * mm, doc.width - 58 * mm], repeatRows=1)
@@ -523,27 +498,19 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
     story.append(plan_table)
     story.append(Spacer(1, 16))
 
-    story.append(Paragraph(
-        tamilfix("மேற்கண்ட உத்தேச பயணத் திட்டத்திற்கு ஒப்புதல் வழங்குமாறு பணிவுடன் கேட்டுக் கொள்கிறேன்."),
-        style_normal,
-    ))
+    story.append(T("மேற்கண்ட உத்தேச பயணத் திட்டத்திற்கு ஒப்புதல் வழங்குமாறு பணிவுடன் கேட்டுக் கொள்கிறேன்."))
     story.append(Spacer(1, 22))
-    story.append(Paragraph(tamilfix(f"{LETTER_SENDER_DESIGNATION},<br/>{LETTER_RECEIVER_OFFICE_LINE2}"), style_right))
+    story.append(T(f"{LETTER_SENDER_DESIGNATION},<br/>{LETTER_RECEIVER_OFFICE_LINE2}", align="right"))
     story.append(Spacer(1, 22))
 
-    story.append(Paragraph(
-        tamilfix("மேற்கண்ட உத்தேச பயணத் திட்டத்திற்கு ஒப்புதல் வழங்கப்படுகிறது."),
-        style_normal,
-    ))
+    story.append(T("மேற்கண்ட உத்தேச பயணத் திட்டத்திற்கு ஒப்புதல் வழங்கப்படுகிறது."))
     story.append(Spacer(1, 22))
-    story.append(Paragraph(
-        tamilfix(f"{LETTER_RECEIVER_DESIGNATION}(பொ),<br/>{LETTER_RECEIVER_OFFICE_LINE2}"), style_right,
-    ))
+    story.append(T(f"{LETTER_RECEIVER_DESIGNATION}(பொ),<br/>{LETTER_RECEIVER_OFFICE_LINE2}", align="right"))
     story.append(Spacer(1, 22))
 
-    story.append(Paragraph(
-        tamilfix(f"பெறுநர் – {LETTER_SENDER_DESIGNATION}, {LETTER_SENDER_OFFICE_LINE1} {LETTER_SENDER_OFFICE_LINE2}"),
-        ParagraphStyle("footer", fontName="TamilRegular", fontSize=9, leading=12),
+    story.append(T(
+        f"பெறுநர் – {LETTER_SENDER_DESIGNATION}, {LETTER_SENDER_OFFICE_LINE1} {LETTER_SENDER_OFFICE_LINE2}",
+        size=9, leading=12,
     ))
 
     doc.build(story)
