@@ -3,30 +3,15 @@
 <div class="card">
   <h2>{{ month_name }} - {{ year }} — உத்தேசப் பயணத் திட்டம்</h2>
   {% if plan.is_complete %}
-    <p class="progress-note">✅ இந்த மாதத்திற்கான பயணத் திட்டம் முழுமையாகி தானாக சேமிக்கப்பட்டுள்ளது.</p>
+    <p class="progress-note">✅ இந்த மாதத்திற்கான பயணத் திட்டம் முழுமையாகி தானாக சேமிக்கப்பட்டுள்ளது. தேவைப்பட்டால் கீழுள்ள பட்டியலில் ஒவ்வொரு நாளையும் திருத்தலாம்.</p>
   {% else %}
     <p class="progress-note">பதிவு செய்யப்பட்ட நாட்கள்: {{ filled_days|length }} — ஒவ்வொரு பதிவும் தானாக சேமிக்கப்படுகிறது.</p>
   {% endif %}
 </div>
 
-{% if filled_days %}
-<div class="card">
-  <table>
-    <tr><th>நாள்</th><th>கிழமை</th><th>பணியிடம்</th></tr>
-    {% for d in filled_days %}
-    <tr class="{{ 'holiday' if d.day_type == 'government_holiday' else 'weekly-off' if d.day_type == 'weekly_off' else 'second-saturday' if d.day_type == 'second_saturday' else '' }}">
-      <td>{{ d.day_date.strftime('%d-%m-%Y') }}</td>
-      <td>{{ d.weekday }}கிழமை</td>
-      <td>{{ d.place_display }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
-{% endif %}
-
 {% if next_pending %}
 <div class="card">
-  <h3>{{ next_pending.strftime('%d-%m-%Y') }} ({{ ['திங்கள்','செவ்வாய்','புதன்','வியாழன்','வெள்ளி','சனி','ஞாயிறு'][next_pending.weekday()] }}கிழமை) — பணியிடம் பதிவு</h3>
+  <h3>{{ next_pending.strftime('%d-%m-%Y') }} ({{ TAMIL_WEEKDAYS_FULL[next_pending.weekday()] }}) — பணியிடம் பதிவு</h3>
   <form method="post" action="{{ url_for('planned_save_day', year=year, month=month) }}">
     <input type="hidden" name="day_date" value="{{ next_pending.isoformat() }}">
     <label>பணியிடம்</label>
@@ -63,6 +48,26 @@
 {% if plan.is_complete %}
 <div class="card">
   <a class="btn" href="{{ url_for('planned_letter_form', year=year, month=month) }}">உத்தேச பயணத்திட்ட அனுமதி கடிதம்</a>
+</div>
+{% endif %}
+
+{% if filled_days %}
+<div class="card">
+  <table>
+    <tr><th>நாள்</th><th>கிழமை</th><th>பணியிடம்</th><th></th></tr>
+    {% for d in filled_days %}
+    <tr class="{{ 'holiday' if d.day_type == 'government_holiday' else 'weekly-off' if d.day_type == 'weekly_off' else 'second-saturday' if d.day_type == 'second_saturday' else '' }}">
+      <td>{{ d.day_date.strftime('%d-%m-%Y') }}</td>
+      <td>{{ TAMIL_WEEKDAY_FULL_MAP.get(d.weekday, d.weekday) }}</td>
+      <td>{{ d.place_display }}</td>
+      <td>
+        {% if d.day_type == 'work' %}
+          <a class="btn btn-secondary" href="{{ url_for('planned_edit_day_form', year=year, month=month, day_id=d.id) }}">திருத்து</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
 </div>
 {% endif %}
 

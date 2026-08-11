@@ -4,7 +4,7 @@ from urllib.parse import quote
 from datetime import datetime, date
 
 import pandas as pd
-from flask import Flask, render_template, request, redirect, url_for, flash, Response
+from flask import Flask, render_template, request, redirect, url_for, flash, Response, abort
 from flask_sqlalchemy import SQLAlchemy
 
 from reportlab.lib.pagesizes import legal, portrait
@@ -83,8 +83,20 @@ class TourPlanDay(db.Model):
 with app.app_context():
     db.create_all()
 
+# templates நேரடியாக கிழமை பெயர்களை (சரியான புணர்ச்சி வடிவில்) பயன்படுத்த
+app.jinja_env.globals["TAMIL_WEEKDAYS_FULL"] = TAMIL_WEEKDAYS_FULL
+app.jinja_env.globals["TAMIL_WEEKDAY_FULL_MAP"] = TAMIL_WEEKDAY_FULL_MAP
+
 
 TAMIL_WEEKDAYS = ["திங்கள்", "செவ்வாய்", "புதன்", "வியாழன்", "வெள்ளி", "சனி", "ஞாயிறு"]
+
+# "கிழமை" ஒட்டும்போது சரியான புணர்ச்சி விதிப்படி மாறும் முழு வடிவங்கள் —
+# (எ.கா. "செவ்வாய்" + "கிழமை" -> "செவ்வாய்க்கிழமை", வெறும் இணைப்பு அல்ல).
+TAMIL_WEEKDAYS_FULL = [
+    "திங்கட்கிழமை", "செவ்வாய்க்கிழமை", "புதன்கிழமை", "வியாழக்கிழமை",
+    "வெள்ளிக்கிழமை", "சனிக்கிழமை", "ஞாயிற்றுக்கிழமை",
+]
+TAMIL_WEEKDAY_FULL_MAP = dict(zip(TAMIL_WEEKDAYS, TAMIL_WEEKDAYS_FULL))
 
 TAMIL_MONTHS = {
     1: "ஜனவரி", 2: "பிப்ரவரி", 3: "மார்ச்", 4: "ஏப்ரல்", 5: "மே", 6: "ஜூன்",
@@ -342,6 +354,61 @@ def planned_save_day(year, month):
     return redirect(url_for("planned_view", year=year, month=month))
 
 
+@app.route("/planned/<int:year>/<int:month>/day/<int:day_id>/edit", methods=["GET"])
+def planned_edit_day_form(year, month, day_id):
+    plan = TourPlan.query.filter_by(year=year, month=month).first()
+    if not plan:
+        abort(404)
+    day = TourPlanDay.query.filter_by(id=day_id, plan_id=plan.id).first()
+    if not day:
+        abort(404)
+    if day.day_type != "work":
+        flash("அரசு விடுமுறை / வார விடுமுறை நாட்களை திருத்த முடியாது.")
+        return redirect(url_for("planned_view", year=year, month=month))
+
+    libraries = get_libraries()
+    return render_template(
+        "planned_edit_day.html",
+        plan=plan, day=day, libraries=libraries,
+        work_types=WORK_TYPES, survey_years=SURVEY_YEARS,
+        month_name=TAMIL_MONTHS[month], year=year, month=month,
+    )
+
+
+@app.route("/planned/<int:year>/<int:month>/day/<int:day_id>/edit", methods=["POST"])
+def planned_edit_day_save(year, month, day_id):
+    plan = TourPlan.query.filter_by(year=year, month=month).first()
+    if not plan:
+        abort(404)
+    day = TourPlanDay.query.filter_by(id=day_id, plan_id=plan.id).first()
+    if not day:
+        abort(404)
+    if day.day_type != "work":
+        flash("அரசு விடுமுறை / வார விடுமுறை நாட்களை திருத்த முடியாது.")
+        return redirect(url_for("planned_view", year=year, month=month))
+
+    work_type = (request.form.get("work_type") or "").strip()
+    library_name = (request.form.get("library_name") or "").strip()
+    survey_year = (request.form.get("survey_year") or "").strip()
+
+    if not work_type:
+        flash("பணியிடம் தேர்வு செய்யவும்.")
+        return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
+
+    if work_type == "நூலகங்கள் ஆய்வு" and (not library_name or not survey_year):
+        flash("நூலகங்கள் ஆய்வு-க்கு நூலகம் பெயர் மற்றும் ஆய்வு ஆண்டு கட்டாயம்.")
+        return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
+
+    day.work_type = work_type
+    day.library_name = library_name if work_type == "நூலகங்கள் ஆய்வு" else None
+    day.survey_year = survey_year if work_type == "நூலகங்கள் ஆய்வு" else None
+    day.place_display = build_place_display(work_type, library_name, survey_year)
+    db.session.commit()
+
+    flash("இந்த நாளின் பதிவு திருத்தப்பட்டது.")
+    return redirect(url_for("planned_view", year=year, month=month))
+
+
 @app.route("/planned/<int:year>/<int:month>/letter", methods=["GET"])
 def planned_letter_form(year, month):
     plan = TourPlan.query.filter_by(year=year, month=month).first()
@@ -459,7 +526,7 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
     story.append(Spacer(1, 14))
 
     ref_line = f"ப.வெ.எண்.{plan.file_number or '____'}, நாள். {plan.letter_date or '__________'}"
-    story.append(T(ref_line))
+    story.append(T(ref_line, align="center"))
     story.append(Spacer(1, 14))
 
     story.append(T("ஐயா,"))
@@ -481,11 +548,13 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
     for d in plan.days:
         table_data.append([
             T(d.day_date.strftime("%d.%m.%Y"), size=10, leading=13),
-            T(f"{d.weekday}கிழமை", size=10, leading=13),
+            T(TAMIL_WEEKDAY_FULL_MAP.get(d.weekday, d.weekday), size=10, leading=13),
             T(d.place_display, size=10, leading=13),
         ])
 
-    plan_table = Table(table_data, colWidths=[28 * mm, 30 * mm, doc.width - 58 * mm], repeatRows=1)
+    # கிழமை நெடுவரிசைக்கு அகலம் அதிகரிக்கப்பட்டது ("செவ்வாய்க்கிழமை" போன்ற
+    # முழு வடிவங்கள் wrap ஆகாமல் ஒரே வரியில் வர).
+    plan_table = Table(table_data, colWidths=[25 * mm, 38 * mm, doc.width - 63 * mm], repeatRows=1)
     plan_table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
