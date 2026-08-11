@@ -1012,7 +1012,7 @@ def generate_actual_report_pdf(plan: ActualTourPlan) -> bytes:
 
     plan_table = Table(
         table_data,
-        colWidths=[24 * mm, 20 * mm, doc.width - 82 * mm, 38 * mm],
+        colWidths=[24 * mm, 28 * mm, doc.width - 90 * mm, 38 * mm],
         repeatRows=1,
     )
     plan_table.setStyle(TableStyle([
