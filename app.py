@@ -999,7 +999,7 @@ def generate_actual_report_pdf(plan: ActualTourPlan) -> bytes:
     table_data = [[
         T("நாள்", font=FONT_BOLD, size=10, leading=13, align="center"),
         T("கிழமை", font=FONT_BOLD, size=10, leading=13, align="center"),
-        T("ஆய்வு/படிவம்", font=FONT_BOLD, size=10, leading=13, align="center"),
+        T("ஆய்வு/பார்வை", font=FONT_BOLD, size=10, leading=13, align="center"),
         T("எடுத்துக் கொண்ட நேரம்", font=FONT_BOLD, size=10, leading=13, align="center"),
     ]]
     for d in plan.days:
