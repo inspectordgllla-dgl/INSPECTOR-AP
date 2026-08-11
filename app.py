@@ -1,11 +1,26 @@
 import os
+import re
 import calendar
+import unicodedata
 from datetime import datetime, date
 
 import pandas as pd
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for, flash, Response
+from flask_sqlalchemy import SQLAlchemy
+
+from reportlab.lib.pagesizes import legal, portrait
+from reportlab.lib.units import mm
+from reportlab.lib import colors
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+)
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dindigul-library-tour-planner-dev-key")
 
 # ---------------------------------------------------------------------------
 # CONFIG
@@ -15,12 +30,63 @@ SHEET_ID = os.environ.get("SHEET_ID", "1R0h8KZLz3fKsEYEb4PHDNwzQGD75Lc7qVrFk4I_a
 LIBRARY_SHEET_NAME = os.environ.get("LIBRARY_SHEET_NAME", "Sheet1")
 HOLIDAY_SHEET_NAME = os.environ.get("HOLIDAY_SHEET_NAME", "HOLIDAYS")
 
+# கடிதத்தில் நிரந்தரமாகத் தோன்றும் விவரங்கள் — தேவைப்பட்டால் இங்கே மாற்றிக்கொள்ளவும்.
+LETTER_SENDER_NAME = os.environ.get("LETTER_SENDER_NAME", "திருமதி.சு.வள்ளி")
+LETTER_SENDER_DESIGNATION = os.environ.get("LETTER_SENDER_DESIGNATION", "நூலக ஆய்வாளர்")
+LETTER_SENDER_OFFICE_LINE1 = os.environ.get("LETTER_SENDER_OFFICE_LINE1", "மாவட்ட நூலக அலுவலகம்,")
+LETTER_SENDER_OFFICE_LINE2 = os.environ.get("LETTER_SENDER_OFFICE_LINE2", "திண்டுக்கல் – 624 003")
+LETTER_RECEIVER_DESIGNATION = os.environ.get("LETTER_RECEIVER_DESIGNATION", "மாவட்ட நூலக அலுவலர்")
+LETTER_RECEIVER_OFFICE_LINE1 = os.environ.get("LETTER_RECEIVER_OFFICE_LINE1", "மாவட்ட நூலக அலுவலகம்,")
+LETTER_RECEIVER_OFFICE_LINE2 = os.environ.get("LETTER_RECEIVER_OFFICE_LINE2", "திண்டுக்கல்")
 
-def sheet_csv_url(sheet_name: str) -> str:
-    return (
-        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
-        f"?tqx=out:csv&sheet={sheet_name}"
+# ---------------------------------------------------------------------------
+# DATABASE
+# ---------------------------------------------------------------------------
+db_url = os.environ.get("DATABASE_URL", "sqlite:///tour_planner.db")
+# Render வழங்கும் URL "postgres://" என தொடங்கும்; SQLAlchemy 1.4+ க்கு "postgresql://" தேவை.
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db = SQLAlchemy(app)
+
+
+class TourPlan(db.Model):
+    __tablename__ = "tour_plans"
+    id = db.Column(db.Integer, primary_key=True)
+    year = db.Column(db.Integer, nullable=False)
+    month = db.Column(db.Integer, nullable=False)
+    is_complete = db.Column(db.Boolean, default=False, nullable=False)
+    file_number = db.Column(db.String(100))
+    letter_date = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    days = db.relationship(
+        "TourPlanDay", backref="plan", cascade="all, delete-orphan",
+        order_by="TourPlanDay.day_date",
     )
+
+    __table_args__ = (db.UniqueConstraint("year", "month", name="uq_year_month"),)
+
+
+class TourPlanDay(db.Model):
+    __tablename__ = "tour_plan_days"
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey("tour_plans.id"), nullable=False)
+    day_date = db.Column(db.Date, nullable=False)
+    weekday = db.Column(db.String(20), nullable=False)
+    day_type = db.Column(db.String(30), nullable=False)  # government_holiday / weekly_off / second_saturday / work
+    work_type = db.Column(db.String(100))
+    library_name = db.Column(db.String(255))
+    survey_year = db.Column(db.String(20))
+    place_display = db.Column(db.String(500), nullable=False)
+
+    __table_args__ = (db.UniqueConstraint("plan_id", "day_date", name="uq_plan_date"),)
+
+
+with app.app_context():
+    db.create_all()
 
 
 TAMIL_WEEKDAYS = ["திங்கள்", "செவ்வாய்", "புதன்", "வியாழன்", "வெள்ளி", "சனி", "ஞாயிறு"]
@@ -42,6 +108,13 @@ SURVEY_YEARS = ["2024-2025", "2025-2026", "2027-2028"]
 # ---------------------------------------------------------------------------
 # DATA FETCHING (Google Sheet -> CSV)
 # ---------------------------------------------------------------------------
+def sheet_csv_url(sheet_name: str) -> str:
+    return (
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
+        f"?tqx=out:csv&sheet={sheet_name}"
+    )
+
+
 def get_libraries():
     """Sheet1: A column = நூலக வகை, B column = நூலகம் பெயர் (A2:B175)."""
     try:
@@ -98,82 +171,372 @@ def get_holidays():
 
 
 # ---------------------------------------------------------------------------
-# ROUTES
+# DAY-TYPE CLASSIFICATION (அரசு விடுமுறை / வார விடுமுறை / 2ம் சனி / வேலை நாள்)
 # ---------------------------------------------------------------------------
-@app.route("/", methods=["GET"])
-def index():
+def is_second_saturday(d: date) -> bool:
+    if d.weekday() != 5:  # Saturday
+        return False
+    saturdays_so_far = sum(
+        1 for day in range(1, d.day + 1)
+        if date(d.year, d.month, day).weekday() == 5
+    )
+    return saturdays_so_far == 2
+
+
+def classify_day(d: date, holidays: dict):
+    """Returns (day_type, auto_place_display) — auto_place_display is None for work days."""
+    key = d.isoformat()
+    if key in holidays:
+        name = holidays[key]
+        display = f"அரசு விடுமுறை - {name}" if name else "அரசு விடுமுறை"
+        return "government_holiday", display
+    if d.weekday() == 4:  # Friday
+        return "weekly_off", "வார விடுமுறை"
+    if is_second_saturday(d):
+        return "second_saturday", "இரண்டாம் சனிக்கிழமை அரசு விடுமுறை"
+    return "work", None
+
+
+def build_place_display(work_type, library_name, survey_year):
+    if work_type == "நூலகங்கள் ஆய்வு":
+        parts = [work_type]
+        extra = []
+        if library_name:
+            extra.append(library_name)
+        if survey_year:
+            extra.append(f"({survey_year})")
+        if extra:
+            parts.append("- " + " ".join(extra))
+        return " ".join(parts)
+    return work_type or "-"
+
+
+def get_or_create_plan(year, month):
+    plan = TourPlan.query.filter_by(year=year, month=month).first()
+    if not plan:
+        plan = TourPlan(year=year, month=month)
+        db.session.add(plan)
+        db.session.commit()
+    return plan
+
+
+def cascade_autofill(plan, holidays):
+    """plan-இல் இதுவரை பதிவாகாத நாட்களை, work day வரும் வரை தானாக நிரப்பும்."""
+    days_in_month = calendar.monthrange(plan.year, plan.month)[1]
+    filled_dates = {d.day_date for d in plan.days}
+    changed = False
+    next_pending = None
+
+    for day_num in range(1, days_in_month + 1):
+        d = date(plan.year, plan.month, day_num)
+        if d in filled_dates:
+            continue
+        day_type, auto_display = classify_day(d, holidays)
+        if day_type == "work":
+            next_pending = d
+            break
+        row = TourPlanDay(
+            plan_id=plan.id,
+            day_date=d,
+            weekday=TAMIL_WEEKDAYS[d.weekday()],
+            day_type=day_type,
+            place_display=auto_display,
+        )
+        db.session.add(row)
+        changed = True
+
+    if changed:
+        db.session.commit()
+
+    days_in_month_total = calendar.monthrange(plan.year, plan.month)[1]
+    if next_pending is None and len(plan.days) == days_in_month_total:
+        if not plan.is_complete:
+            plan.is_complete = True
+            db.session.commit()
+
+    return next_pending
+
+
+# ---------------------------------------------------------------------------
+# ROUTES — DASHBOARD
+# ---------------------------------------------------------------------------
+@app.route("/")
+def dashboard():
+    return render_template("dashboard.html")
+
+
+# ---------------------------------------------------------------------------
+# ROUTES — 1. உத்தேசப் பயணத் திட்டம்
+# ---------------------------------------------------------------------------
+@app.route("/planned", methods=["GET"])
+def planned_select():
     today = date.today()
-    year = int(request.args.get("year", today.year))
-    month = int(request.args.get("month", today.month))
+    saved_plans = (
+        TourPlan.query.order_by(TourPlan.year.desc(), TourPlan.month.desc()).all()
+    )
+    return render_template(
+        "planned_select.html",
+        tamil_months=TAMIL_MONTHS,
+        years_range=list(range(today.year - 1, today.year + 2)),
+        default_year=today.year,
+        default_month=today.month,
+        saved_plans=saved_plans,
+    )
+
+
+@app.route("/planned/<int:year>/<int:month>", methods=["GET"])
+def planned_view(year, month):
+    holidays = get_holidays()
+    plan = get_or_create_plan(year, month)
+    next_pending = cascade_autofill(plan, holidays)
 
     libraries = get_libraries()
-    holidays = get_holidays()
-
-    days_in_month = calendar.monthrange(year, month)[1]
-    rows = []
-    for day in range(1, days_in_month + 1):
-        d = date(year, month, day)
-        holiday_name = holidays.get(d.isoformat())
-        rows.append({
-            "key": d.isoformat(),
-            "date_disp": d.strftime("%d-%m-%Y"),
-            "weekday": TAMIL_WEEKDAYS[d.weekday()],
-            "is_sunday": d.weekday() == 6,
-            "holiday_name": holiday_name,
-        })
+    filled_days = TourPlan.query.get(plan.id).days  # refreshed relationship
 
     return render_template(
-        "index.html",
-        rows=rows,
+        "planned_index.html",
+        plan=plan,
+        filled_days=filled_days,
+        next_pending=next_pending,
         libraries=libraries,
         work_types=WORK_TYPES,
         survey_years=SURVEY_YEARS,
+        month_name=TAMIL_MONTHS[month],
         year=year,
         month=month,
-        month_name=TAMIL_MONTHS[month],
-        tamil_months=TAMIL_MONTHS,
-        years_range=list(range(today.year - 1, today.year + 2)),
     )
 
 
-@app.route("/generate", methods=["POST"])
-def generate():
-    year = int(request.form.get("year"))
-    month = int(request.form.get("month"))
-    days_in_month = calendar.monthrange(year, month)[1]
+@app.route("/planned/<int:year>/<int:month>/day", methods=["POST"])
+def planned_save_day(year, month):
+    plan = get_or_create_plan(year, month)
+    day_str = request.form.get("day_date")
+    work_type = (request.form.get("work_type") or "").strip()
+    library_name = (request.form.get("library_name") or "").strip()
+    survey_year = (request.form.get("survey_year") or "").strip()
 
-    plan = []
-    for day in range(1, days_in_month + 1):
-        d = date(year, month, day)
-        key = d.isoformat()
-        work_type = (request.form.get(f"work_{key}") or "").strip()
-        library_name = (request.form.get(f"library_{key}") or "").strip()
-        survey_year = (request.form.get(f"survey_year_{key}") or "").strip()
+    try:
+        d = datetime.strptime(day_str, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        flash("தேதி தவறாக உள்ளது.")
+        return redirect(url_for("planned_view", year=year, month=month))
 
-        place_display = work_type
-        if work_type == "நூலகங்கள் ஆய்வு":
-            extra = []
-            if library_name:
-                extra.append(library_name)
-            if survey_year:
-                extra.append(f"({survey_year})")
-            if extra:
-                place_display = f"{work_type} - {' '.join(extra)}"
-        elif work_type == "நூலகங்கள் பார்வை" and library_name:
-            place_display = f"{work_type} - {library_name}"
+    if not work_type:
+        flash("பணியிடம் தேர்வு செய்யவும்.")
+        return redirect(url_for("planned_view", year=year, month=month))
 
-        plan.append({
-            "date_disp": d.strftime("%d-%m-%Y"),
-            "weekday": TAMIL_WEEKDAYS[d.weekday()],
-            "place": place_display or "-",
-        })
+    if work_type == "நூலகங்கள் ஆய்வு" and (not library_name or not survey_year):
+        flash("நூலகங்கள் ஆய்வு-க்கு நூலகம் பெயர் மற்றும் ஆய்வு ஆண்டு கட்டாயம்.")
+        return redirect(url_for("planned_view", year=year, month=month))
 
+    place_display = build_place_display(work_type, library_name, survey_year)
+
+    row = TourPlanDay(
+        plan_id=plan.id,
+        day_date=d,
+        weekday=TAMIL_WEEKDAYS[d.weekday()],
+        day_type="work",
+        work_type=work_type,
+        library_name=library_name if work_type == "நூலகங்கள் ஆய்வு" else None,
+        survey_year=survey_year if work_type == "நூலகங்கள் ஆய்வு" else None,
+        place_display=place_display,
+    )
+    db.session.add(row)
+    db.session.commit()
+
+    return redirect(url_for("planned_view", year=year, month=month))
+
+
+@app.route("/planned/<int:year>/<int:month>/letter", methods=["GET"])
+def planned_letter_form(year, month):
+    plan = TourPlan.query.filter_by(year=year, month=month).first()
+    if not plan or not plan.is_complete:
+        flash("இந்த மாதத்திற்கான பயணத் திட்டம் இன்னும் முழுமையாகவில்லை.")
+        return redirect(url_for("planned_view", year=year, month=month))
     return render_template(
-        "result.html",
-        plan=plan,
-        month_name=TAMIL_MONTHS[month],
-        year=year,
+        "letter_form.html", plan=plan, month_name=TAMIL_MONTHS[month], year=year, month=month,
     )
+
+
+@app.route("/planned/<int:year>/<int:month>/letter", methods=["POST"])
+def planned_letter_generate(year, month):
+    plan = TourPlan.query.filter_by(year=year, month=month).first()
+    if not plan or not plan.is_complete:
+        flash("இந்த மாதத்திற்கான பயணத் திட்டம் இன்னும் முழுமையாகவில்லை.")
+        return redirect(url_for("planned_view", year=year, month=month))
+
+    file_number = (request.form.get("file_number") or "").strip()
+    letter_date = (request.form.get("letter_date") or "").strip()
+    plan.file_number = file_number
+    plan.letter_date = letter_date
+    db.session.commit()
+
+    pdf_bytes = generate_permission_letter_pdf(plan)
+    filename = f"utthesa-payanam-{TAMIL_MONTHS[month]}-{year}.pdf".replace(" ", "-")
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# ROUTES — 2 & 3. Placeholder பிரிவுகள் (பின்னர் விரிவாக்கம் செய்யலாம்)
+# ---------------------------------------------------------------------------
+@app.route("/actual")
+def actual_placeholder():
+    return render_template(
+        "placeholder.html",
+        title="உண்மைப் பயணத் திட்டம்",
+        message="இந்தப் பகுதி விரைவில் சேர்க்கப்படும்.",
+    )
+
+
+@app.route("/reports")
+def reports_placeholder():
+    return render_template(
+        "placeholder.html",
+        title="ஆய்வு / பார்வை அறிக்கைகள்",
+        message="இந்தப் பகுதி விரைவில் சேர்க்கப்படும்.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# PDF LETTER GENERATION
+# ---------------------------------------------------------------------------
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+pdfmetrics.registerFont(TTFont("TamilRegular", os.path.join(FONT_DIR, "NotoSansTamil-Regular.ttf")))
+pdfmetrics.registerFont(TTFont("TamilBold", os.path.join(FONT_DIR, "NotoSansTamil-Bold.ttf")))
+
+_PREBASE_MARKS = "\u0bc6\u0bc7\u0bc8"  # ெ ே ை — Tamil vowel signs that render BEFORE their base consonant
+
+
+def tamilfix(text: str) -> str:
+    """ReportLab draws glyphs in raw Unicode order with no Indic shaping engine,
+    so pre-base Tamil vowel signs (and the split matras ொ/ோ/ௌ that decompose to
+    one) show up after the consonant instead of before it. This reorders the
+    text so the naive left-to-right glyph layout comes out visually correct.
+    Only ever used for PDF text — HTML already shapes Tamil correctly in-browser."""
+    if not text:
+        return text
+    text = unicodedata.normalize("NFD", text)
+    text = re.sub(f"(.)([{_PREBASE_MARKS}])", r"\2\1", text)
+    return text
+
+
+def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
+    import io
+
+    buf = io.BytesIO()
+    page_size = portrait(legal)
+    doc = SimpleDocTemplate(
+        buf, pagesize=page_size,
+        topMargin=20 * mm, bottomMargin=18 * mm,
+        leftMargin=20 * mm, rightMargin=20 * mm,
+    )
+
+    style_title = ParagraphStyle("title", fontName="TamilBold", fontSize=14, alignment=TA_CENTER, spaceAfter=14)
+    style_normal = ParagraphStyle("normal", fontName="TamilRegular", fontSize=11, leading=16, alignment=TA_LEFT)
+    style_right = ParagraphStyle("right", fontName="TamilRegular", fontSize=11, leading=16, alignment=TA_RIGHT)
+    style_subject = ParagraphStyle("subject", fontName="TamilRegular", fontSize=11, leading=16, alignment=TA_JUSTIFY)
+    style_cell = ParagraphStyle("cell", fontName="TamilRegular", fontSize=10, leading=13, alignment=TA_LEFT)
+    style_cell_header = ParagraphStyle("cellh", fontName="TamilBold", fontSize=10, leading=13, alignment=TA_CENTER)
+
+    story = []
+    story.append(Paragraph(tamilfix("பொது நூலகத் துறை"), style_title))
+
+    header_table = Table(
+        [[
+            Paragraph(
+                tamilfix(
+                    f"அனுப்புநர்<br/>{LETTER_SENDER_NAME},<br/>{LETTER_SENDER_DESIGNATION},<br/>"
+                    f"{LETTER_SENDER_OFFICE_LINE1}<br/>{LETTER_SENDER_OFFICE_LINE2}"
+                ),
+                style_normal,
+            ),
+            Paragraph(
+                tamilfix(
+                    f"பெறுநர்<br/>{LETTER_RECEIVER_DESIGNATION},<br/>"
+                    f"{LETTER_RECEIVER_OFFICE_LINE1}<br/>{LETTER_RECEIVER_OFFICE_LINE2}"
+                ),
+                style_normal,
+            ),
+        ]],
+        colWidths=[doc.width / 2.0, doc.width / 2.0],
+    )
+    header_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 14))
+
+    ref_line = tamilfix(f"ப.வெ.எண்.{plan.file_number or '____'}, நாள். {plan.letter_date or '__________'}")
+    story.append(Paragraph(ref_line, style_normal))
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph(tamilfix("ஐயா,"), style_normal))
+    story.append(Spacer(1, 10))
+
+    subject = tamilfix(
+        f"பொருள் : உத்தேசப் பயணத் திட்டம் – திண்டுக்கல் மாவட்ட நூலக ஆணைக்குழு – "
+        f"{LETTER_SENDER_NAME} – {LETTER_SENDER_DESIGNATION} – {TAMIL_MONTHS[plan.month]} – {plan.year} "
+        f"மாதத்திற்கான உத்தேச பயணத் திட்டம் சமர்ப்பித்தல் – சார்பு"
+    )
+    story.append(Paragraph(subject, style_subject))
+    story.append(Spacer(1, 14))
+
+    table_data = [[
+        Paragraph(tamilfix("நாள்"), style_cell_header),
+        Paragraph(tamilfix("கிழமை"), style_cell_header),
+        Paragraph(tamilfix("பணியிடம்"), style_cell_header),
+    ]]
+    for d in plan.days:
+        table_data.append([
+            Paragraph(d.day_date.strftime("%d.%m.%Y"), style_cell),
+            Paragraph(tamilfix(f"{d.weekday}கிழமை"), style_cell),
+            Paragraph(tamilfix(d.place_display), style_cell),
+        ])
+
+    plan_table = Table(table_data, colWidths=[28 * mm, 30 * mm, doc.width - 58 * mm], repeatRows=1)
+    plan_table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(plan_table)
+    story.append(Spacer(1, 16))
+
+    story.append(Paragraph(
+        tamilfix("மேற்கண்ட உத்தேச பயணத் திட்டத்திற்கு ஒப்புதல் வழங்குமாறு பணிவுடன் கேட்டுக் கொள்கிறேன்."),
+        style_normal,
+    ))
+    story.append(Spacer(1, 22))
+    story.append(Paragraph(tamilfix(f"{LETTER_SENDER_DESIGNATION},<br/>{LETTER_RECEIVER_OFFICE_LINE2}"), style_right))
+    story.append(Spacer(1, 22))
+
+    story.append(Paragraph(
+        tamilfix("மேற்கண்ட உத்தேச பயணத் திட்டத்திற்கு ஒப்புதல் வழங்கப்படுகிறது."),
+        style_normal,
+    ))
+    story.append(Spacer(1, 22))
+    story.append(Paragraph(
+        tamilfix(f"{LETTER_RECEIVER_DESIGNATION}(பொ),<br/>{LETTER_RECEIVER_OFFICE_LINE2}"), style_right,
+    ))
+    story.append(Spacer(1, 22))
+
+    story.append(Paragraph(
+        tamilfix(f"பெறுநர் – {LETTER_SENDER_DESIGNATION}, {LETTER_SENDER_OFFICE_LINE1} {LETTER_SENDER_OFFICE_LINE2}"),
+        ParagraphStyle("footer", fontName="TamilRegular", fontSize=9, leading=12),
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>{{ month_name }} - {{ year }} — உத்தேசப் பயணத் திட்டம்</h2>
+  {% if plan.is_complete %}
+    <p class="progress-note">✅ இந்த மாதத்திற்கான பயணத் திட்டம் முழுமையாகி தானாக சேமிக்கப்பட்டுள்ளது.</p>
+  {% else %}
+    <p class="progress-note">பதிவு செய்யப்பட்ட நாட்கள்: {{ filled_days|length }} — ஒவ்வொரு பதிவும் தானாக சேமிக்கப்படுகிறது.</p>
+  {% endif %}
+</div>
+
+{% if filled_days %}
+<div class="card">
+  <table>
+    <tr><th>நாள்</th><th>கிழமை</th><th>பணியிடம்</th></tr>
+    {% for d in filled_days %}
+    <tr class="{{ 'holiday' if d.day_type == 'government_holiday' else 'weekly-off' if d.day_type == 'weekly_off' else 'second-saturday' if d.day_type == 'second_saturday' else '' }}">
+      <td>{{ d.day_date.strftime('%d-%m-%Y') }}</td>
+      <td>{{ d.weekday }}கிழமை</td>
+      <td>{{ d.place_display }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if next_pending %}
+<div class="card">
+  <h3>{{ next_pending.strftime('%d-%m-%Y') }} ({{ ['திங்கள்','செவ்வாய்','புதன்','வியாழன்','வெள்ளி','சனி','ஞாயிறு'][next_pending.weekday()] }}கிழமை) — பணியிடம் பதிவு</h3>
+  <form method="post" action="{{ url_for('planned_save_day', year=year, month=month) }}">
+    <input type="hidden" name="day_date" value="{{ next_pending.isoformat() }}">
+    <label>பணியிடம்</label>
+    <select name="work_type" id="work_type" onchange="toggleFields()" required>
+      <option value="">-- தேர்வு செய்யவும் --</option>
+      {% for wt in work_types %}
+        <option value="{{ wt }}">{{ wt }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="field-group" id="library_group">
+      <label>நூலகம் பெயர்</label>
+      <select name="library_name">
+        <option value="">-- நூலகம் தேர்வு செய்யவும் --</option>
+        {% for lib in libraries %}
+          <option value="{{ lib.name }}">{{ lib.name }}{% if lib.type %} ({{ lib.type }}){% endif %}</option>
+        {% endfor %}
+      </select>
+
+      <label>ஆய்வு ஆண்டு</label>
+      <select name="survey_year">
+        <option value="">-- ஆண்டு தேர்வு செய்யவும் --</option>
+        {% for sy in survey_years %}
+          <option value="{{ sy }}">{{ sy }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button type="submit">இந்த நாளை பதிவு செய்</button>
+  </form>
+</div>
+{% endif %}
+
+{% if plan.is_complete %}
+<div class="card">
+  <a class="btn" href="{{ url_for('planned_letter_form', year=year, month=month) }}">உத்தேச பயணத்திட்ட அனுமதி கடிதம்</a>
+</div>
+{% endif %}
+
+<script>
+function toggleFields() {
+  var wt = document.getElementById('work_type').value;
+  var libGroup = document.getElementById('library_group');
+  var librarySelect = libGroup.querySelector('select[name=library_name]');
+  var surveySelect = libGroup.querySelector('select[name=survey_year]');
+  if (wt === 'நூலகங்கள் ஆய்வு') {
+    libGroup.classList.add('active');
+    librarySelect.required = true;
+    surveySelect.required = true;
+  } else {
+    libGroup.classList.remove('active');
+    librarySelect.required = false;
+    surveySelect.required = false;
+  }
+}
+toggleFields();
+</script>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>{{ month_name }} - {{ year }} — உத்தேச பயணத்திட்ட அனுமதி கடிதம்</h2>
+  <form method="post" action="{{ url_for('planned_letter_generate', year=year, month=month) }}">
+    <label>ப.வெ.எண்</label>
+    <input type="text" name="file_number" value="{{ plan.file_number or '' }}" placeholder="எ.கா. 115/அ/2022" required>
+
+    <label>நாள்</label>
+    <input type="text" name="letter_date" value="{{ plan.letter_date or '' }}" placeholder="எ.கா. 04.08.2026" required>
+
+    <button type="submit">PDF கடிதம் தயார் செய்</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,3 +1,9 @@
+databases:
+  - name: library-tour-planner-db
+    plan: free
+    databaseName: library_tour_planner
+    user: tour_planner_user
+
 services:
   - type: web
     name: library-tour-planner
@@ -12,3 +18,9 @@ services:
         value: Sheet1
       - key: HOLIDAY_SHEET_NAME
         value: HOLIDAYS
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: library-tour-planner-db
+          property: connectionString

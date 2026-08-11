@@ -3,13 +3,107 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}நூலக பணி - பயணத் திட்டம்{% endblock %}</title>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<title>{% block title %}நூலக பணி - உத்தேச மாத பயணத் திட்டம்{% endblock %}</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Noto Sans Tamil', sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 0;
+    color: #1f2933;
+  }
+  header.topbar {
+    background: #14532d;
+    color: #fff;
+    padding: 16px 20px;
+  }
+  header.topbar h1 { margin: 0; font-size: 1.2rem; }
+  header.topbar a { color: #d1fae5; text-decoration: none; font-size: 0.9rem; }
+  main {
+    max-width: 900px;
+    margin: 20px auto;
+    padding: 0 16px 40px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .dash-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 22px 16px;
+    margin-bottom: 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  }
+  .dash-btn.plan1 { background: #2563eb; }
+  .dash-btn.plan2 { background: #7c3aed; }
+  .dash-btn.plan3 { background: #ea580c; }
+  .dash-btn:hover { filter: brightness(1.08); }
+
+  label { display:block; margin: 10px 0 4px; font-weight:600; }
+  select, input[type=text] {
+    width: 100%;
+    padding: 10px;
+    font-size: 1rem;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    font-family: inherit;
+  }
+  button, .btn {
+    background: #14532d;
+    color: #fff;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    margin-top: 14px;
+    font-family: inherit;
+  }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  .btn-secondary { background: #64748b; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; font-size: 0.92rem; }
+  th { background: #f1f5f9; }
+  tr.holiday td { background: #fee2e2; }
+  tr.weekly-off td { background: #fef9c3; }
+  tr.second-saturday td { background: #ffedd5; }
+  tr.pending-row td { background: #dbeafe; }
+
+  .flash { background:#fef3c7; border:1px solid #f59e0b; padding:10px 14px; border-radius:6px; margin-bottom:14px; }
+  .progress-note { color:#475569; font-size:0.9rem; margin-top:6px; }
+  .field-group { display:none; }
+  .field-group.active { display:block; }
+</style>
 </head>
 <body>
-<div class="container">
+<header class="topbar">
+  <h1>நூலக பணி - உத்தேச மாத பயணத் திட்டம்</h1>
+  <a href="{{ url_for('dashboard') }}">&larr; முதன்மைப் பக்கம்</a>
+</header>
+<main>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for m in messages %}
+        <div class="flash">{{ m }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
   {% block content %}{% endblock %}
-</div>
+</main>
 </body>
 </html>
