@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% from "_actual_macros.html" import library_checklist %}
+{% block content %}
+<div class="card">
+  <h2>{{ month_name }} - {{ year }} — உண்மைப் பயணத் திட்டம்</h2>
+  {% if plan.is_complete %}
+    <p class="progress-note">✅ இந்த மாதத்திற்கான பயணத் திட்டம் முழுமையாகி தானாக சேமிக்கப்பட்டுள்ளது. தேவைப்பட்டால் கீழுள்ள பட்டியலில் ஒவ்வொரு நாளையும் திருத்தலாம்.</p>
+  {% else %}
+    <p class="progress-note">பதிவு செய்யப்பட்ட நாட்கள்: {{ filled_days|length }} — ஒவ்வொரு பதிவும் தானாக சேமிக்கப்படுகிறது.</p>
+  {% endif %}
+</div>
+
+{% if next_pending %}
+<div class="card">
+  <h3>{{ next_pending.strftime('%d-%m-%Y') }} ({{ ['திங்கள்','செவ்வாய்','புதன்','வியாழன்','வெள்ளி','சனி','ஞாயிறு'][next_pending.weekday()] }}) — ஆய்வு/பார்வை பதிவு</h3>
+  <form method="post" action="{{ url_for('actual_save_day', year=year, month=month) }}">
+    <input type="hidden" name="day_date" value="{{ next_pending.isoformat() }}">
+
+    <label>ஆய்வு / படிவம்</label>
+    <div class="check-row">
+      <label><input type="checkbox" name="has_visit" id="has_visit" onchange="toggleActualFields()"> பார்வை</label>
+      <label><input type="checkbox" name="has_survey" id="has_survey" onchange="toggleActualFields()"> ஆய்வு</label>
+      <label><input type="checkbox" name="has_office" id="has_office"> அலுவலகப் பணி</label>
+    </div>
+
+    <div class="field-group" id="visit_group">
+      <label>பார்வை நூலகங்கள் (அதிகபட்சம் {{ max_libraries }})</label>
+      {{ library_checklist("visit_libraries", "visit_checklist", "visit_filter", "visit_count", libraries, max_libraries) }}
+    </div>
+
+    <div class="field-group" id="survey_group">
+      <label>ஆய்வு ஆண்டு</label>
+      <select name="survey_year" id="survey_year_select">
+        <option value="">-- ஆண்டு தேர்வு செய்யவும் --</option>
+        {% for sy in survey_years %}
+          <option value="{{ sy }}">{{ sy }}</option>
+        {% endfor %}
+      </select>
+      <label>ஆய்வு நூலகங்கள் (அதிகபட்சம் {{ max_libraries }})</label>
+      {{ library_checklist("survey_libraries", "survey_checklist", "survey_filter", "survey_count", libraries, max_libraries) }}
+    </div>
+
+    <label>எடுத்துக் கொண்ட நேரம்</label>
+    <div class="time-row">
+      <div class="time-field">
+        <select name="time_from" required>
+          <option value="">முற்பகல்</option>
+          {% for t in time_from_options %}
+            <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="time-field">
+        <select name="time_to" required>
+          <option value="">பிற்பகல்</option>
+          {% for t in time_to_options %}
+            <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <button type="submit">இந்த நாளை பதிவு செய்</button>
+  </form>
+</div>
+{% endif %}
+
+{% if plan.is_complete %}
+<div class="card">
+  <a class="btn" href="{{ url_for('actual_report_pdf', year=year, month=month) }}">உண்மை பயண நாட்குறிப்பு PDF அறிக்கை</a>
+</div>
+{% endif %}
+
+{% if filled_days %}
+<div class="card">
+  <table>
+    <tr><th>நாள்</th><th>கிழமை</th><th>ஆய்வு/பார்வை</th><th>எடுத்துக் கொண்ட நேரம்</th><th></th></tr>
+    {% for d in filled_days %}
+    <tr class="{{ 'holiday' if d.day_type == 'government_holiday' else 'weekly-off' if d.day_type == 'weekly_off' else 'second-saturday' if d.day_type == 'second_saturday' else '' }}">
+      <td>{{ d.day_date.strftime('%d-%m-%Y') }}</td>
+      <td>{{ d.weekday }}</td>
+      <td class="content-cell">{% for line in d.content_lines %}{{ line }}<br>{% endfor %}</td>
+      <td>{{ d.time_display }}</td>
+      <td>
+        {% if d.day_type == 'work' %}
+          <a class="btn btn-secondary" href="{{ url_for('actual_edit_day_form', year=year, month=month, day_id=d.id) }}">திருத்து</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% include "_actual_scripts.html" %}
+{% endblock %}

@@ -1,0 +1,43 @@
+<script>
+function toggleActualFields() {
+  var visit = document.getElementById('has_visit').checked;
+  var survey = document.getElementById('has_survey').checked;
+  var visitGroup = document.getElementById('visit_group');
+  var surveyGroup = document.getElementById('survey_group');
+  if (visitGroup) visitGroup.classList.toggle('active', visit);
+  if (surveyGroup) surveyGroup.classList.toggle('active', survey);
+  var surveyYearSel = document.getElementById('survey_year_select');
+  if (surveyYearSel) surveyYearSel.required = survey;
+}
+
+function setupChecklist(containerId, countId) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  var max = parseInt(container.dataset.max, 10);
+  var boxes = container.querySelectorAll('input[type=checkbox]');
+  var countEl = document.getElementById(countId);
+  function update() {
+    var checked = container.querySelectorAll('input[type=checkbox]:checked').length;
+    if (countEl) countEl.textContent = checked + ' / ' + max + ' தேர்வு செய்யப்பட்டது';
+    boxes.forEach(function (b) {
+      if (!b.checked) { b.disabled = checked >= max; }
+    });
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', update); });
+  update();
+}
+
+document.querySelectorAll('.lib-filter').forEach(function (inp) {
+  inp.addEventListener('input', function () {
+    var target = document.getElementById(this.dataset.target);
+    var q = this.value.trim();
+    target.querySelectorAll('label').forEach(function (lbl) {
+      lbl.style.display = lbl.textContent.indexOf(q) !== -1 ? '' : 'none';
+    });
+  });
+});
+
+toggleActualFields();
+setupChecklist('visit_checklist', 'visit_count');
+setupChecklist('survey_checklist', 'survey_count');
+</script>

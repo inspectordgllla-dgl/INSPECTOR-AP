@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_actual_macros.html" import library_checklist %}
+{% block content %}
+<div class="card">
+  <h2>{{ month_name }} - {{ year }} — நாள் பதிவைத் திருத்து</h2>
+  <h3>{{ day.day_date.strftime('%d-%m-%Y') }} ({{ day.weekday }})</h3>
+
+  <form method="post" action="{{ url_for('actual_edit_day_save', year=year, month=month, day_id=day.id) }}">
+    <label>ஆய்வு / படிவம்</label>
+    <div class="check-row">
+      <label><input type="checkbox" name="has_visit" id="has_visit" onchange="toggleActualFields()" {% if day.has_visit %}checked{% endif %}> பார்வை</label>
+      <label><input type="checkbox" name="has_survey" id="has_survey" onchange="toggleActualFields()" {% if day.has_survey %}checked{% endif %}> ஆய்வு</label>
+      <label><input type="checkbox" name="has_office" id="has_office" {% if day.has_office %}checked{% endif %}> அலுவலகப் பணி</label>
+    </div>
+
+    <div class="field-group" id="visit_group">
+      <label>பார்வை நூலகங்கள் (அதிகபட்சம் {{ max_libraries }})</label>
+      {{ library_checklist("visit_libraries", "visit_checklist", "visit_filter", "visit_count", libraries, max_libraries, day.visit_library_list) }}
+    </div>
+
+    <div class="field-group" id="survey_group">
+      <label>ஆய்வு ஆண்டு</label>
+      <select name="survey_year" id="survey_year_select">
+        <option value="">-- ஆண்டு தேர்வு செய்யவும் --</option>
+        {% for sy in survey_years %}
+          <option value="{{ sy }}" {% if sy == day.survey_year %}selected{% endif %}>{{ sy }}</option>
+        {% endfor %}
+      </select>
+      <label>ஆய்வு நூலகங்கள் (அதிகபட்சம் {{ max_libraries }})</label>
+      {{ library_checklist("survey_libraries", "survey_checklist", "survey_filter", "survey_count", libraries, max_libraries, day.survey_library_list) }}
+    </div>
+
+    <label>எடுத்துக் கொண்ட நேரம்</label>
+    <div class="time-row">
+      <div class="time-field">
+        <select name="time_from" required>
+          <option value="">முற்பகல்</option>
+          {% for t in time_from_options %}
+            <option value="{{ t }}" {% if t == day.time_from %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="time-field">
+        <select name="time_to" required>
+          <option value="">பிற்பகல்</option>
+          {% for t in time_to_options %}
+            <option value="{{ t }}" {% if t == day.time_to %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <button type="submit">மாற்றங்களைச் சேமி</button>
+    <a class="btn btn-secondary" href="{{ url_for('actual_view', year=year, month=month) }}">ரத்து செய்</a>
+  </form>
+</div>
+
+{% include "_actual_scripts.html" %}
+{% endblock %}

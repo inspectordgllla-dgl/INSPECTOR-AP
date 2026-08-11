@@ -1,0 +1,12 @@
+{% macro library_checklist(field_name, checklist_id, filter_id, count_id, libraries, max_count, selected=[]) %}
+<input type="text" class="lib-filter" id="{{ filter_id }}" data-target="{{ checklist_id }}" placeholder="நூலகம் பெயரைத் தேடவும்...">
+<div class="lib-checklist" id="{{ checklist_id }}" data-max="{{ max_count }}">
+  {% for lib in libraries %}
+  <label>
+    <input type="checkbox" name="{{ field_name }}" value="{{ lib.name }}" {% if lib.name in selected %}checked{% endif %}>
+    <span>{{ lib.name }}{% if lib.type %} ({{ lib.type }}){% endif %}</span>
+  </label>
+  {% endfor %}
+</div>
+<p class="lib-count" id="{{ count_id }}">0 / {{ max_count }} தேர்வு செய்யப்பட்டது</p>
+{% endmacro %}

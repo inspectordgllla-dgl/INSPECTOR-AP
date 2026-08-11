@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>உண்மைப் பயணத் திட்டம் — மாதம் தேர்வு</h2>
+  <form method="get" action="{{ url_for('actual_select') }}" onsubmit="return goToMonth(event)">
+    <label>ஆண்டு</label>
+    <select id="year">
+      {% for y in years_range %}
+        <option value="{{ y }}" {% if y == default_year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+    <label>மாதம்</label>
+    <select id="month">
+      {% for m, name in tamil_months.items() %}
+        <option value="{{ m }}" {% if m == default_month %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">தொடங்கு / தொடரவும்</button>
+  </form>
+</div>
+
+{% if saved_plans %}
+<div class="card">
+  <h3>முந்தைய பயணத் திட்டங்கள்</h3>
+  <table>
+    <tr><th>மாதம்</th><th>ஆண்டு</th><th>நிலை</th><th></th></tr>
+    {% for p in saved_plans %}
+    <tr>
+      <td>{{ tamil_months[p.month] }}</td>
+      <td>{{ p.year }}</td>
+      <td>{{ "முழுமையானது" if p.is_complete else "நிலுவையில்" }}</td>
+      <td><a class="btn btn-secondary" href="{{ url_for('actual_view', year=p.year, month=p.month) }}">திற</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<script>
+function goToMonth(e) {
+  e.preventDefault();
+  var y = document.getElementById('year').value;
+  var m = document.getElementById('month').value;
+  window.location.href = "/actual/" + y + "/" + m;
+  return false;
+}
+</script>
+{% endblock %}
