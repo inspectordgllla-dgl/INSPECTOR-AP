@@ -1,0 +1,143 @@
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Noto Sans Tamil', 'Latha', sans-serif;
+  background: #f4f6f8;
+  color: #1f2937;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 16px 60px;
+}
+
+h1 {
+  font-size: 22px;
+  color: #1e3a8a;
+  margin-bottom: 4px;
+}
+
+h2 {
+  font-size: 18px;
+  margin-top: 24px;
+}
+
+h3 {
+  color: #374151;
+  font-weight: 500;
+}
+
+.note {
+  font-size: 13px;
+  color: #4b5563;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+.month-select-form {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: #fff;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 10px;
+}
+
+.month-select-form label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 14px;
+}
+
+select, button {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+button {
+  background: #1e3a8a;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  padding: 8px 16px;
+}
+
+button:hover { background: #172f6e; }
+
+.table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th, td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: #1e3a8a;
+  color: #fff;
+  position: sticky;
+  top: 0;
+}
+
+tr.holiday-row { background: #fee2e2; }
+tr.sunday-row { background: #fef9c3; }
+
+.tag {
+  font-size: 11px;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.submit-btn {
+  margin-top: 16px;
+  font-size: 15px;
+  padding: 10px 22px;
+}
+
+.result-header {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.result-header a {
+  color: #1e3a8a;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  .container { max-width: 100%; padding: 0; }
+  th { background: #ddd !important; color: #000 !important; -webkit-print-color-adjust: exact; }
+  tr.holiday-row { -webkit-print-color-adjust: exact; }
+  tr.sunday-row { -webkit-print-color-adjust: exact; }
+}

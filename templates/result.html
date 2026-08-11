@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}உத்தேச பயணத் திட்டம் - {{ month_name }} {{ year }}{% endblock %}
+{% block content %}
+
+<div class="result-header no-print">
+  <a href="/">&larr; மீண்டும் திருத்த</a>
+  <button onclick="window.print()">🖨️ அச்சிடு / PDF ஆக சேமி</button>
+  <button onclick="downloadCSV()">⬇️ CSV பதிவிறக்கம்</button>
+</div>
+
+<h1>உத்தேச பயணத் திட்டம்</h1>
+<h3>மாதம்: {{ month_name }} {{ year }}</h3>
+
+<table id="planTable">
+  <thead>
+    <tr>
+      <th>நாள்</th>
+      <th>கிழமை</th>
+      <th>பணியிடம்</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in plan %}
+    <tr>
+      <td>{{ p.date_disp }}</td>
+      <td>{{ p.weekday }}</td>
+      <td>{{ p.place }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+function downloadCSV() {
+  var rows = [["நாள்", "கிழமை", "பணியிடம்"]];
+  document.querySelectorAll('#planTable tbody tr').forEach(function (tr) {
+    var cells = tr.querySelectorAll('td');
+    rows.push([cells[0].innerText, cells[1].innerText, cells[2].innerText]);
+  });
+  var csv = rows.map(function (r) {
+    return r.map(function (c) { return '"' + c.replace(/"/g, '""') + '"'; }).join(',');
+  }).join('\n');
+  var blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+  var link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'payanam_thittam_{{ month_name }}_{{ year }}.csv';
+  link.click();
+}
+</script>
+
+{% endblock %}

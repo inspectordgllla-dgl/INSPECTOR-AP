@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}மாத பயணத் திட்டம் தயாரிக்க{% endblock %}
+{% block content %}
+
+<h1>நூலக பார்வை / ஆய்வு - உத்தேச மாத பயணத் திட்டம்</h1>
+
+<form method="get" action="/" class="month-select-form">
+  <label>ஆண்டு:
+    <select name="year">
+      {% for y in years_range %}
+        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>மாதம்:
+    <select name="month">
+      {% for m, mname in tamil_months.items() %}
+        <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ mname }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">காட்டு</button>
+</form>
+
+<h2>{{ month_name }} {{ year }} - நாள் வாரியான பணி விவரம்</h2>
+<p class="note">
+  சிவப்பு நிற வரிசைகள் = அரசு விடுமுறை நாட்கள் &nbsp;|&nbsp;
+  மஞ்சள் நிற வரிசைகள் = ஞாயிற்றுக்கிழமை (வார விடுமுறை).<br>
+  தேவைப்படும் நாட்களுக்கு பணியிடம் தேர்ந்தெடுக்கவும். எதுவும் தேர்வு செய்யாத நாட்கள் "-" எனக் காட்டப்படும்.
+</p>
+
+<form method="post" action="/generate" id="planForm">
+  <input type="hidden" name="year" value="{{ year }}">
+  <input type="hidden" name="month" value="{{ month }}">
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>நாள்</th>
+        <th>கிழமை</th>
+        <th>பணியிடம்</th>
+        <th>நூலகம் (விருப்பம்)</th>
+        <th>ஆய்வு ஆண்டு</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="{% if row.holiday_name %}holiday-row{% elif row.is_sunday %}sunday-row{% endif %}">
+        <td>{{ row.date_disp }}</td>
+        <td>
+          {{ row.weekday }}
+          {% if row.holiday_name %}<br><span class="tag">விடுமுறை: {{ row.holiday_name }}</span>{% endif %}
+        </td>
+        <td>
+          <select name="work_{{ row.key }}" class="work-select" data-key="{{ row.key }}">
+            <option value="">-- தேர்வு செய்யவும் --</option>
+            {% for wt in work_types %}
+              <option value="{{ wt }}">{{ wt }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <select name="library_{{ row.key }}" class="library-select" data-key="{{ row.key }}" disabled>
+            <option value="">-- நூலகம் தேர்வு (விருப்பம்) --</option>
+            {% for lib in libraries %}
+              <option value="{{ lib.name }}">{{ lib.name }}{% if lib.type %} ({{ lib.type }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <select name="survey_year_{{ row.key }}" class="survey-year-select" data-key="{{ row.key }}" disabled>
+            <option value="">-- ஆண்டு --</option>
+            {% for sy in survey_years %}
+              <option value="{{ sy }}">{{ sy }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <button type="submit" class="submit-btn">பயணத் திட்டம் தயார் செய்</button>
+</form>
+
+<script>
+document.querySelectorAll('.work-select').forEach(function (sel) {
+  sel.addEventListener('change', function () {
+    var key = this.dataset.key;
+    var libSel = document.querySelector('.library-select[data-key="' + key + '"]');
+    var yearSel = document.querySelector('.survey-year-select[data-key="' + key + '"]');
+    var val = this.value;
+
+    if (val === 'நூலகங்கள் ஆய்வு') {
+      libSel.disabled = false;
+      yearSel.disabled = false;
+    } else if (val === 'நூலகங்கள் பார்வை') {
+      libSel.disabled = false;
+      yearSel.disabled = true;
+      yearSel.value = '';
+    } else {
+      libSel.disabled = true;
+      libSel.value = '';
+      yearSel.disabled = true;
+      yearSel.value = '';
+    }
+  });
+});
+</script>
+
+{% endblock %}
