@@ -16,7 +16,7 @@
   <form method="post" action="{{ url_for('actual_save_day', year=year, month=month) }}">
     <input type="hidden" name="day_date" value="{{ next_pending.isoformat() }}">
 
-    <label>ஆய்வு / படிவம்</label>
+    <label>ஆய்வு / பார்வை</label>
     <div class="check-row">
       <label><input type="checkbox" name="has_visit" id="has_visit" onchange="toggleActualFields()"> பார்வை</label>
       <label><input type="checkbox" name="has_survey" id="has_survey" onchange="toggleActualFields()"> ஆய்வு</label>
