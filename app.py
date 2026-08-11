@@ -157,6 +157,21 @@ WORK_TYPES = [
 
 SURVEY_YEARS = ["2024-2025", "2025-2026", "2027-2028"]
 
+# சனி (5) / ஞாயிறு (6) நாட்களில் "அலுவலகப் பணி" விருப்பம் காட்டப்படாது.
+OFFICE_WORK_EXCLUDED_WEEKDAYS = (5, 6)
+
+# ஒரு மாதத்திற்கான, ஏற்கனவே சேமிக்கப்பட்ட உத்தேசப் பயணத் திட்டம் மற்றும்
+# உண்மைப் பயணத் திட்டத்தை அழிக்க தேவைப்படும் கடவுச்சொல்.
+DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "Dlodgl@123")
+
+
+def work_types_for_day(d):
+    """கொடுக்கப்பட்ட தேதி சனி/ஞாயிறு எனில் 'அலுவலகப் பணி' விருப்பத்தை நீக்கிய
+    பட்டியலைத் திருப்பும்."""
+    if d and d.weekday() in OFFICE_WORK_EXCLUDED_WEEKDAYS:
+        return [wt for wt in WORK_TYPES if wt != "அலுவலகப் பணி"]
+    return WORK_TYPES
+
 # உண்மைப் பயணத் திட்டம் — "எடுத்துக் கொண்ட நேரம்" தேர்வுகள்
 TIME_FROM_OPTIONS = ["08.00", "09.00"]
 TIME_TO_OPTIONS = ["05.00", "06.00", "07.00", "08.00"]
@@ -425,7 +440,7 @@ def planned_view(year, month):
         filled_days=filled_days,
         next_pending=next_pending,
         libraries=libraries,
-        work_types=WORK_TYPES,
+        work_types=work_types_for_day(next_pending),
         survey_years=SURVEY_YEARS,
         month_name=TAMIL_MONTHS[month],
         year=year,
@@ -449,6 +464,10 @@ def planned_save_day(year, month):
 
     if not work_type:
         flash("பணியிடம் தேர்வு செய்யவும்.")
+        return redirect(url_for("planned_view", year=year, month=month))
+
+    if work_type == "அலுவலகப் பணி" and d.weekday() in OFFICE_WORK_EXCLUDED_WEEKDAYS:
+        flash("சனி / ஞாயிறு நாட்களில் 'அலுவலகப் பணி' தேர்வு செய்ய முடியாது.")
         return redirect(url_for("planned_view", year=year, month=month))
 
     if work_type == "நூலகங்கள் ஆய்வு" and (not library_name or not survey_year):
@@ -489,7 +508,7 @@ def planned_edit_day_form(year, month, day_id):
     return render_template(
         "planned_edit_day.html",
         plan=plan, day=day, libraries=libraries,
-        work_types=WORK_TYPES, survey_years=SURVEY_YEARS,
+        work_types=work_types_for_day(day.day_date), survey_years=SURVEY_YEARS,
         month_name=TAMIL_MONTHS[month], year=year, month=month,
     )
 
@@ -512,6 +531,10 @@ def planned_edit_day_save(year, month, day_id):
 
     if not work_type:
         flash("பணியிடம் தேர்வு செய்யவும்.")
+        return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
+
+    if work_type == "அலுவலகப் பணி" and day.day_date.weekday() in OFFICE_WORK_EXCLUDED_WEEKDAYS:
+        flash("சனி / ஞாயிறு நாட்களில் 'அலுவலகப் பணி' தேர்வு செய்ய முடியாது.")
         return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
 
     if work_type == "நூலகங்கள் ஆய்வு" and (not library_name or not survey_year):
@@ -680,6 +703,10 @@ def actual_save_day(year, month):
         flash(error)
         return redirect(url_for("actual_view", year=year, month=month))
 
+    if data["has_office"] and d.weekday() in OFFICE_WORK_EXCLUDED_WEEKDAYS:
+        flash("சனி / ஞாயிறு நாட்களில் 'அலுவலகப் பணி' தேர்வு செய்ய முடியாது.")
+        return redirect(url_for("actual_view", year=year, month=month))
+
     place_display = build_actual_content(
         data["has_survey"], data["survey_year"], data["survey_libs"],
         data["has_visit"], data["visit_libs"], data["has_office"],
@@ -747,6 +774,10 @@ def actual_edit_day_save(year, month, day_id):
         flash(error)
         return redirect(url_for("actual_edit_day_form", year=year, month=month, day_id=day_id))
 
+    if data["has_office"] and day.day_date.weekday() in OFFICE_WORK_EXCLUDED_WEEKDAYS:
+        flash("சனி / ஞாயிறு நாட்களில் 'அலுவலகப் பணி' தேர்வு செய்ய முடியாது.")
+        return redirect(url_for("actual_edit_day_form", year=year, month=month, day_id=day_id))
+
     day.has_visit = data["has_visit"]
     day.visit_libraries = "\n".join(data["visit_libs"])
     day.has_survey = data["has_survey"]
@@ -785,6 +816,32 @@ def actual_report_pdf(year, month):
         mimetype="application/pdf",
         headers={"Content-Disposition": content_disposition},
     )
+
+
+# ---------------------------------------------------------------------------
+# ROUTES — ஒரு மாதத்திற்கான உத்தேச + உண்மை பயணத் திட்டங்களை அழித்தல்
+# ---------------------------------------------------------------------------
+@app.route("/delete_month/<int:year>/<int:month>", methods=["POST"])
+def delete_month(year, month):
+    password = request.form.get("password") or ""
+    next_page = request.form.get("next") or "planned_select"
+    if next_page not in ("planned_select", "actual_select"):
+        next_page = "planned_select"
+
+    if password != DELETE_PASSWORD:
+        flash("கடவுச்சொல் தவறு — எதுவும் அழிக்கப்படவில்லை.")
+        return redirect(url_for(next_page))
+
+    planned = TourPlan.query.filter_by(year=year, month=month).first()
+    if planned:
+        db.session.delete(planned)
+    actual = ActualTourPlan.query.filter_by(year=year, month=month).first()
+    if actual:
+        db.session.delete(actual)
+    db.session.commit()
+
+    flash(f"{TAMIL_MONTHS[month]} {year} — உத்தேசப் பயணத் திட்டம் மற்றும் உண்மைப் பயணத் திட்டம் அழிக்கப்பட்டது.")
+    return redirect(url_for(next_page))
 
 
 # ---------------------------------------------------------------------------

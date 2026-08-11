@@ -107,6 +107,30 @@ th {
 tr.holiday-row { background: #fee2e2; }
 tr.sunday-row { background: #fef9c3; }
 
+.col-weekday {
+  min-width: 110px;
+  white-space: nowrap;
+}
+
+.btn-danger {
+  background: #b91c1c;
+}
+
+.btn-danger:hover {
+  background: #7f1d1d;
+}
+
+.delete-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.delete-form input[type="password"] {
+  width: 140px;
+}
+
 .tag {
   font-size: 11px;
   color: #b91c1c;

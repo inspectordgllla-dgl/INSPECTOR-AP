@@ -20,7 +20,9 @@
     <div class="check-row">
       <label><input type="checkbox" name="has_visit" id="has_visit" onchange="toggleActualFields()"> பார்வை</label>
       <label><input type="checkbox" name="has_survey" id="has_survey" onchange="toggleActualFields()"> ஆய்வு</label>
+      {% if next_pending.weekday() not in (5, 6) %}
       <label><input type="checkbox" name="has_office" id="has_office"> அலுவலகப் பணி</label>
+      {% endif %}
     </div>
 
     <div class="field-group" id="visit_group">
@@ -74,11 +76,11 @@
 {% if filled_days %}
 <div class="card">
   <table>
-    <tr><th>நாள்</th><th>கிழமை</th><th>ஆய்வு/பார்வை</th><th>எடுத்துக் கொண்ட நேரம்</th><th></th></tr>
+    <tr><th>நாள்</th><th class="col-weekday">கிழமை</th><th>ஆய்வு/பார்வை</th><th>எடுத்துக் கொண்ட நேரம்</th><th></th></tr>
     {% for d in filled_days %}
     <tr class="{{ 'holiday' if d.day_type == 'government_holiday' else 'weekly-off' if d.day_type == 'weekly_off' else 'second-saturday' if d.day_type == 'second_saturday' else '' }}">
       <td>{{ d.day_date.strftime('%d-%m-%Y') }}</td>
-      <td>{{ d.weekday }}</td>
+      <td class="col-weekday">{{ d.weekday }}</td>
       <td class="content-cell">{% for line in d.content_lines %}{{ line }}<br>{% endfor %}</td>
       <td>{{ d.time_display }}</td>
       <td>
