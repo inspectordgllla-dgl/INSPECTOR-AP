@@ -40,6 +40,16 @@
       </select>
     </div>
 
+    <div class="field-group" id="leave_group">
+      <label>விடுப்பு வகை</label>
+      <select name="leave_type">
+        <option value="">-- விடுப்பு வகை தேர்வு செய்யவும் --</option>
+        {% for lt in leave_types %}
+          <option value="{{ lt }}">{{ lt }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <button type="submit">இந்த நாளை பதிவு செய்</button>
   </form>
 </div>
@@ -85,6 +95,16 @@ function toggleFields() {
     libGroup.classList.remove('active');
     librarySelect.required = false;
     surveySelect.required = false;
+  }
+
+  var leaveGroup = document.getElementById('leave_group');
+  var leaveSelect = leaveGroup.querySelector('select[name=leave_type]');
+  if (wt === 'விடுப்பு') {
+    leaveGroup.classList.add('active');
+    leaveSelect.required = true;
+  } else {
+    leaveGroup.classList.remove('active');
+    leaveSelect.required = false;
   }
 }
 toggleFields();

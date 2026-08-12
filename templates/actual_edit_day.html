@@ -11,8 +11,19 @@
       <label><input type="checkbox" name="has_visit" id="has_visit" onchange="toggleActualFields()" {% if day.has_visit %}checked{% endif %}> பார்வை</label>
       <label><input type="checkbox" name="has_survey" id="has_survey" onchange="toggleActualFields()" {% if day.has_survey %}checked{% endif %}> ஆய்வு</label>
       {% if day.day_date.weekday() not in (5, 6) %}
-      <label><input type="checkbox" name="has_office" id="has_office" {% if day.has_office %}checked{% endif %}> அலுவலகப் பணி</label>
+      <label><input type="checkbox" name="has_office" id="has_office" onchange="toggleActualFields()" {% if day.has_office %}checked{% endif %}> அலுவலகப் பணி</label>
       {% endif %}
+      <label><input type="checkbox" name="has_leave" id="has_leave" onchange="toggleActualFields()" {% if day.has_leave %}checked{% endif %}> விடுப்பு</label>
+    </div>
+
+    <div class="field-group" id="leave_group">
+      <label>விடுப்பு வகை</label>
+      <select name="leave_type" id="leave_type_select">
+        <option value="">-- விடுப்பு வகை தேர்வு செய்யவும் --</option>
+        {% for lt in leave_types %}
+          <option value="{{ lt }}" {% if lt == day.leave_type %}selected{% endif %}>{{ lt }}</option>
+        {% endfor %}
+      </select>
     </div>
 
     <div class="field-group" id="visit_group">
@@ -35,7 +46,7 @@
     <label>எடுத்துக் கொண்ட நேரம்</label>
     <div class="time-row">
       <div class="time-field">
-        <select name="time_from" required>
+        <select name="time_from" id="time_from_select">
           <option value="">முற்பகல்</option>
           {% for t in time_from_options %}
             <option value="{{ t }}" {% if t == day.time_from %}selected{% endif %}>{{ t }}</option>
@@ -43,7 +54,7 @@
         </select>
       </div>
       <div class="time-field">
-        <select name="time_to" required>
+        <select name="time_to" id="time_to_select">
           <option value="">பிற்பகல்</option>
           {% for t in time_to_options %}
             <option value="{{ t }}" {% if t == day.time_to %}selected{% endif %}>{{ t }}</option>

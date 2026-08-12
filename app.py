@@ -76,6 +76,7 @@ class TourPlanDay(db.Model):
     work_type = db.Column(db.String(100))
     library_name = db.Column(db.String(255))
     survey_year = db.Column(db.String(20))
+    leave_type = db.Column(db.String(50))
     place_display = db.Column(db.String(500), nullable=False)
 
     __table_args__ = (db.UniqueConstraint("plan_id", "day_date", name="uq_plan_date"),)
@@ -110,6 +111,8 @@ class ActualTourPlanDay(db.Model):
     survey_year = db.Column(db.String(20))
     survey_libraries = db.Column(db.Text)     # '\n' separated நூலகம் பெயர்கள் (ஆய்வு)
     has_office = db.Column(db.Boolean, default=False, nullable=False)
+    has_leave = db.Column(db.Boolean, default=False, nullable=False)
+    leave_type = db.Column(db.String(50))
     time_from = db.Column(db.String(20))
     time_to = db.Column(db.String(20))
     place_display = db.Column(db.Text, nullable=False)   # காட்சிக்கான உரை ('\n' கோடுகள்)
@@ -153,6 +156,14 @@ WORK_TYPES = [
     "நூலகங்கள் பார்வை",
     "அலுவலகப் பணி",
     "நூலகங்கள் ஆய்வு",
+    "விடுப்பு",
+]
+
+LEAVE_TYPES = [
+    "தற்செயல் விடுப்பு",
+    "மதவிடுப்பு",
+    "ஈட்டிய விடுப்பு",
+    "மருத்துவ விடுப்பு",
 ]
 
 SURVEY_YEARS = ["2024-2025", "2025-2026", "2027-2028"]
@@ -270,7 +281,7 @@ def classify_day(d: date, holidays: dict):
     return "work", None
 
 
-def build_place_display(work_type, library_name, survey_year):
+def build_place_display(work_type, library_name, survey_year, leave_type=None):
     if work_type == "நூலகங்கள் ஆய்வு":
         parts = [work_type]
         extra = []
@@ -281,10 +292,13 @@ def build_place_display(work_type, library_name, survey_year):
         if extra:
             parts.append("- " + " ".join(extra))
         return " ".join(parts)
+    if work_type == "விடுப்பு":
+        return f"விடுப்பு - {leave_type}" if leave_type else "விடுப்பு"
     return work_type or "-"
 
 
-def build_actual_content(has_survey, survey_year, survey_libs, has_visit, visit_libs, has_office):
+def build_actual_content(has_survey, survey_year, survey_libs, has_visit, visit_libs, has_office,
+                          has_leave=False, leave_type=None):
     """உண்மைப் பயணத் திட்ட நாளின் 'ஆய்வு/படிவம்' நெடுவரிசைக்கான பல-வரி உரையை
     கட்டமைக்கிறது (மாடல் கடிதத்தில் உள்ளது போன்று ஆய்வு பிரிவு முதலிலும்,
     பார்வை பிரிவு பின்னாலும்)."""
@@ -303,6 +317,10 @@ def build_actual_content(has_survey, survey_year, survey_libs, has_visit, visit_
         if lines:
             lines.append("")
         lines.append("அலுவலகப் பணி")
+    if has_leave:
+        if lines:
+            lines.append("")
+        lines.append(f"விடுப்பு - {leave_type}" if leave_type else "விடுப்பு")
     return "\n".join(lines) if lines else "-"
 
 
@@ -442,6 +460,7 @@ def planned_view(year, month):
         libraries=libraries,
         work_types=work_types_for_day(next_pending),
         survey_years=SURVEY_YEARS,
+        leave_types=LEAVE_TYPES,
         month_name=TAMIL_MONTHS[month],
         year=year,
         month=month,
@@ -455,6 +474,7 @@ def planned_save_day(year, month):
     work_type = (request.form.get("work_type") or "").strip()
     library_name = (request.form.get("library_name") or "").strip()
     survey_year = (request.form.get("survey_year") or "").strip()
+    leave_type = (request.form.get("leave_type") or "").strip()
 
     try:
         d = datetime.strptime(day_str, "%Y-%m-%d").date()
@@ -474,7 +494,11 @@ def planned_save_day(year, month):
         flash("நூலகங்கள் ஆய்வு-க்கு நூலகம் பெயர் மற்றும் ஆய்வு ஆண்டு கட்டாயம்.")
         return redirect(url_for("planned_view", year=year, month=month))
 
-    place_display = build_place_display(work_type, library_name, survey_year)
+    if work_type == "விடுப்பு" and not leave_type:
+        flash("விடுப்பு வகையைத் தேர்வு செய்யவும்.")
+        return redirect(url_for("planned_view", year=year, month=month))
+
+    place_display = build_place_display(work_type, library_name, survey_year, leave_type)
 
     row = TourPlanDay(
         plan_id=plan.id,
@@ -484,6 +508,7 @@ def planned_save_day(year, month):
         work_type=work_type,
         library_name=library_name if work_type == "நூலகங்கள் ஆய்வு" else None,
         survey_year=survey_year if work_type == "நூலகங்கள் ஆய்வு" else None,
+        leave_type=leave_type if work_type == "விடுப்பு" else None,
         place_display=place_display,
     )
     db.session.add(row)
@@ -509,6 +534,7 @@ def planned_edit_day_form(year, month, day_id):
         "planned_edit_day.html",
         plan=plan, day=day, libraries=libraries,
         work_types=work_types_for_day(day.day_date), survey_years=SURVEY_YEARS,
+        leave_types=LEAVE_TYPES,
         month_name=TAMIL_MONTHS[month], year=year, month=month,
     )
 
@@ -528,6 +554,7 @@ def planned_edit_day_save(year, month, day_id):
     work_type = (request.form.get("work_type") or "").strip()
     library_name = (request.form.get("library_name") or "").strip()
     survey_year = (request.form.get("survey_year") or "").strip()
+    leave_type = (request.form.get("leave_type") or "").strip()
 
     if not work_type:
         flash("பணியிடம் தேர்வு செய்யவும்.")
@@ -541,10 +568,15 @@ def planned_edit_day_save(year, month, day_id):
         flash("நூலகங்கள் ஆய்வு-க்கு நூலகம் பெயர் மற்றும் ஆய்வு ஆண்டு கட்டாயம்.")
         return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
 
+    if work_type == "விடுப்பு" and not leave_type:
+        flash("விடுப்பு வகையைத் தேர்வு செய்யவும்.")
+        return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
+
     day.work_type = work_type
     day.library_name = library_name if work_type == "நூலகங்கள் ஆய்வு" else None
     day.survey_year = survey_year if work_type == "நூலகங்கள் ஆய்வு" else None
-    day.place_display = build_place_display(work_type, library_name, survey_year)
+    day.leave_type = leave_type if work_type == "விடுப்பு" else None
+    day.place_display = build_place_display(work_type, library_name, survey_year, leave_type)
     db.session.commit()
 
     flash("இந்த நாளின் பதிவு திருத்தப்பட்டது.")
@@ -629,6 +661,7 @@ def actual_view(year, month):
         next_pending=next_pending,
         libraries=libraries,
         survey_years=SURVEY_YEARS,
+        leave_types=LEAVE_TYPES,
         time_from_options=TIME_FROM_OPTIONS,
         time_to_options=TIME_TO_OPTIONS,
         max_libraries=MAX_LIBRARIES_PER_DAY,
@@ -646,18 +679,20 @@ def _read_actual_day_form(form):
     has_visit = bool(form.get("has_visit"))
     has_survey = bool(form.get("has_survey"))
     has_office = bool(form.get("has_office"))
+    has_leave = bool(form.get("has_leave"))
 
     visit_libs_raw = form.getlist("visit_libraries")
     survey_libs_raw = form.getlist("survey_libraries")
     survey_year = (form.get("survey_year") or "").strip()
+    leave_type = (form.get("leave_type") or "").strip()
     time_from = (form.get("time_from") or "").strip()
     time_to = (form.get("time_to") or "").strip()
 
     visit_libs = visit_libs_raw[:MAX_LIBRARIES_PER_DAY]
     survey_libs = survey_libs_raw[:MAX_LIBRARIES_PER_DAY]
 
-    if not (has_visit or has_survey or has_office):
-        return None, "பார்வை / ஆய்வு / அலுவலகப் பணி — ஒன்றையாவது தேர்வு செய்யவும்."
+    if not (has_visit or has_survey or has_office or has_leave):
+        return None, "பார்வை / ஆய்வு / அலுவலகப் பணி / விடுப்பு — ஒன்றையாவது தேர்வு செய்யவும்."
 
     if has_visit and not visit_libs:
         return None, "பார்வைக்கு குறைந்தது ஒரு நூலகம் தேர்வு செய்யவும்."
@@ -671,7 +706,13 @@ def _read_actual_day_form(form):
     if len(survey_libs_raw) > MAX_LIBRARIES_PER_DAY:
         return None, f"ஆய்வுக்கு அதிகபட்சம் {MAX_LIBRARIES_PER_DAY} நூலகங்கள் மட்டுமே தேர்வு செய்யலாம்."
 
-    if not time_from or not time_to:
+    if has_leave and not leave_type:
+        return None, "விடுப்பு வகையைத் தேர்வு செய்யவும்."
+
+    # அந்த நாள் முழுக்க விடுப்பு மட்டும் எனில் ("பார்வை/ஆய்வு/அலுவலகப் பணி" இல்லாமல்)
+    # "எடுத்துக் கொண்ட நேரம்" கட்டாயமில்லை.
+    only_leave = has_leave and not (has_visit or has_survey or has_office)
+    if not only_leave and (not time_from or not time_to):
         return None, "எடுத்துக் கொண்ட நேரம் (முற்பகல் & பிற்பகல்) தேர்வு செய்யவும்."
 
     data = {
@@ -681,6 +722,8 @@ def _read_actual_day_form(form):
         "survey_year": survey_year if has_survey else "",
         "survey_libs": survey_libs,
         "has_office": has_office,
+        "has_leave": has_leave,
+        "leave_type": leave_type if has_leave else "",
         "time_from": time_from,
         "time_to": time_to,
     }
@@ -710,6 +753,7 @@ def actual_save_day(year, month):
     place_display = build_actual_content(
         data["has_survey"], data["survey_year"], data["survey_libs"],
         data["has_visit"], data["visit_libs"], data["has_office"],
+        data["has_leave"], data["leave_type"],
     )
 
     row = ActualTourPlanDay(
@@ -723,6 +767,8 @@ def actual_save_day(year, month):
         survey_year=data["survey_year"],
         survey_libraries="\n".join(data["survey_libs"]),
         has_office=data["has_office"],
+        has_leave=data["has_leave"],
+        leave_type=data["leave_type"] or None,
         time_from=data["time_from"],
         time_to=data["time_to"],
         place_display=place_display,
@@ -750,6 +796,7 @@ def actual_edit_day_form(year, month, day_id):
         "actual_edit_day.html",
         plan=plan, day=day, libraries=libraries,
         survey_years=SURVEY_YEARS,
+        leave_types=LEAVE_TYPES,
         time_from_options=TIME_FROM_OPTIONS,
         time_to_options=TIME_TO_OPTIONS,
         max_libraries=MAX_LIBRARIES_PER_DAY,
@@ -784,11 +831,14 @@ def actual_edit_day_save(year, month, day_id):
     day.survey_year = data["survey_year"]
     day.survey_libraries = "\n".join(data["survey_libs"])
     day.has_office = data["has_office"]
+    day.has_leave = data["has_leave"]
+    day.leave_type = data["leave_type"] or None
     day.time_from = data["time_from"]
     day.time_to = data["time_to"]
     day.place_display = build_actual_content(
         data["has_survey"], data["survey_year"], data["survey_libs"],
         data["has_visit"], data["visit_libs"], data["has_office"],
+        data["has_leave"], data["leave_type"],
     )
     db.session.commit()
 

@@ -2,12 +2,31 @@
 function toggleActualFields() {
   var visit = document.getElementById('has_visit').checked;
   var survey = document.getElementById('has_survey').checked;
+  var officeEl = document.getElementById('has_office');
+  var office = officeEl ? officeEl.checked : false;
+  var leaveEl = document.getElementById('has_leave');
+  var leave = leaveEl ? leaveEl.checked : false;
+
   var visitGroup = document.getElementById('visit_group');
   var surveyGroup = document.getElementById('survey_group');
+  var leaveGroup = document.getElementById('leave_group');
   if (visitGroup) visitGroup.classList.toggle('active', visit);
   if (surveyGroup) surveyGroup.classList.toggle('active', survey);
+  if (leaveGroup) leaveGroup.classList.toggle('active', leave);
+
   var surveyYearSel = document.getElementById('survey_year_select');
   if (surveyYearSel) surveyYearSel.required = survey;
+
+  var leaveTypeSel = document.getElementById('leave_type_select');
+  if (leaveTypeSel) leaveTypeSel.required = leave;
+
+  // அன்று விடுப்பு மட்டும் என்றால் ("பார்வை/ஆய்வு/அலுவலகப் பணி" இல்லாமல்)
+  // "எடுத்துக் கொண்ட நேரம்" கட்டாயமில்லை.
+  var onlyLeave = leave && !(visit || survey || office);
+  var timeFromSel = document.getElementById('time_from_select');
+  var timeToSel = document.getElementById('time_to_select');
+  if (timeFromSel) timeFromSel.required = !onlyLeave;
+  if (timeToSel) timeToSel.required = !onlyLeave;
 }
 
 function setupChecklist(containerId, countId) {
