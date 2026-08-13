@@ -12,45 +12,13 @@
 {% if next_pending %}
 <div class="card">
   <h3>{{ next_pending.strftime('%d-%m-%Y') }} ({{ ['திங்கள்','செவ்வாய்','புதன்','வியாழன்','வெள்ளி','சனி','ஞாயிறு'][next_pending.weekday()] }}) — பணியிடம் பதிவு</h3>
-  <form method="post" action="{{ url_for('planned_save_day', year=year, month=month) }}">
+  <div class="chat-wrap" id="chatWrap"></div>
+  <form method="post" action="{{ url_for('planned_save_day', year=year, month=month) }}" id="dayForm" style="display:none;">
     <input type="hidden" name="day_date" value="{{ next_pending.isoformat() }}">
-    <label>பணியிடம்</label>
-    <select name="work_type" id="work_type" onchange="toggleFields()" required>
-      <option value="">-- தேர்வு செய்யவும் --</option>
-      {% for wt in work_types %}
-        <option value="{{ wt }}">{{ wt }}</option>
-      {% endfor %}
-    </select>
-
-    <div class="field-group" id="library_group">
-      <label>நூலகம் பெயர்</label>
-      <select name="library_name">
-        <option value="">-- நூலகம் தேர்வு செய்யவும் --</option>
-        {% for lib in libraries %}
-          <option value="{{ lib.name }}">{{ lib.name }}{% if lib.type %} ({{ lib.type }}){% endif %}</option>
-        {% endfor %}
-      </select>
-
-      <label>ஆய்வு ஆண்டு</label>
-      <select name="survey_year">
-        <option value="">-- ஆண்டு தேர்வு செய்யவும் --</option>
-        {% for sy in survey_years %}
-          <option value="{{ sy }}">{{ sy }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="field-group" id="leave_group">
-      <label>விடுப்பு வகை</label>
-      <select name="leave_type">
-        <option value="">-- விடுப்பு வகை தேர்வு செய்யவும் --</option>
-        {% for lt in leave_types %}
-          <option value="{{ lt }}">{{ lt }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <button type="submit">இந்த நாளை பதிவு செய்</button>
+    <input type="hidden" name="work_type" id="work_type_input">
+    <input type="hidden" name="library_name" id="library_name_input">
+    <input type="hidden" name="survey_year" id="survey_year_input">
+    <input type="hidden" name="leave_type" id="leave_type_input">
   </form>
 </div>
 {% endif %}
@@ -81,32 +49,84 @@
 </div>
 {% endif %}
 
+<script src="{{ url_for('static', filename='chat.js') }}"></script>
+{% if next_pending %}
 <script>
-function toggleFields() {
-  var wt = document.getElementById('work_type').value;
-  var libGroup = document.getElementById('library_group');
-  var librarySelect = libGroup.querySelector('select[name=library_name]');
-  var surveySelect = libGroup.querySelector('select[name=survey_year]');
-  if (wt === 'நூலகங்கள் ஆய்வு') {
-    libGroup.classList.add('active');
-    librarySelect.required = true;
-    surveySelect.required = true;
-  } else {
-    libGroup.classList.remove('active');
-    librarySelect.required = false;
-    surveySelect.required = false;
+(function () {
+  var workTypes = {{ work_types | tojson }};
+  var libraries = {{ libraries | tojson }};
+  var surveyYears = {{ survey_years | tojson }};
+  var leaveTypes = {{ leave_types | tojson }};
+  var dateLabel = "{{ next_pending.strftime('%d-%m-%Y') }} ({{ ['திங்கள்','செவ்வாய்','புதன்','வியாழன்','வெள்ளி','சனி','ஞாயிறு'][next_pending.weekday()] }})";
+
+  var wrap = document.getElementById('chatWrap');
+  var form = document.getElementById('dayForm');
+  var libraryItems = libraries.map(function (l) {
+    return { label: l.name + (l.type ? ' (' + l.type + ')' : ''), value: l.name };
+  });
+
+  function askWorkType() {
+    chatBot(wrap, dateLabel + " அன்று என்ன பணி?");
+    chatChips(wrap, workTypes.map(function (wt) { return { label: wt, value: wt }; }), function (choice) {
+      chatUser(wrap, choice.label);
+      document.getElementById('work_type_input').value = choice.value;
+      if (choice.value === 'நூலகங்கள் ஆய்வு') {
+        askLibrary();
+      } else if (choice.value === 'விடுப்பு') {
+        askLeaveType();
+      } else {
+        confirmSave();
+      }
+    });
   }
 
-  var leaveGroup = document.getElementById('leave_group');
-  var leaveSelect = leaveGroup.querySelector('select[name=leave_type]');
-  if (wt === 'விடுப்பு') {
-    leaveGroup.classList.add('active');
-    leaveSelect.required = true;
-  } else {
-    leaveGroup.classList.remove('active');
-    leaveSelect.required = false;
+  function askLibrary() {
+    chatBot(wrap, "எந்த நூலகம்?");
+    chatSearchChips(wrap, libraryItems, 1, 'தேர்வு முடிந்தது', function (selected) {
+      var pick = selected[0];
+      chatUser(wrap, pick.label);
+      document.getElementById('library_name_input').value = pick.value;
+      askSurveyYear();
+    });
   }
-}
-toggleFields();
+
+  function askSurveyYear() {
+    chatBot(wrap, "ஆய்வு ஆண்டு?");
+    chatChips(wrap, surveyYears.map(function (sy) { return { label: sy, value: sy }; }), function (choice) {
+      chatUser(wrap, choice.label);
+      document.getElementById('survey_year_input').value = choice.value;
+      confirmSave();
+    });
+  }
+
+  function askLeaveType() {
+    chatBot(wrap, "விடுப்பு வகை?");
+    chatChips(wrap, leaveTypes.map(function (lt) { return { label: lt, value: lt }; }), function (choice) {
+      chatUser(wrap, choice.label);
+      document.getElementById('leave_type_input').value = choice.value;
+      confirmSave();
+    });
+  }
+
+  function confirmSave() {
+    chatBot(wrap, "சரி, இதைச் சேமிக்கலாமா?");
+    chatChips(wrap, [{ label: '✅ சேமி', value: 'save' }, { label: '🔄 மீண்டும்', value: 'restart' }], function (choice) {
+      chatUser(wrap, choice.label);
+      if (choice.value === 'save') {
+        form.submit();
+      } else {
+        wrap.innerHTML = '';
+        document.getElementById('work_type_input').value = '';
+        document.getElementById('library_name_input').value = '';
+        document.getElementById('survey_year_input').value = '';
+        document.getElementById('leave_type_input').value = '';
+        askWorkType();
+      }
+    });
+  }
+
+  askWorkType();
+})();
 </script>
+{% endif %}
 {% endblock %}

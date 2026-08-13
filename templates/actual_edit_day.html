@@ -1,72 +1,180 @@
 {% extends "base.html" %}
-{% from "_actual_macros.html" import library_checklist %}
 {% block content %}
 <div class="card">
   <h2>{{ month_name }} - {{ year }} — நாள் பதிவைத் திருத்து</h2>
   <h3>{{ day.day_date.strftime('%d-%m-%Y') }} ({{ day.weekday }})</h3>
+  <p class="progress-note">தற்போதைய பதிவு: {% for line in day.content_lines %}{{ line }}{% if not loop.last %} / {% endif %}{% endfor %} — கீழே மீண்டும் தேர்வு செய்து சேமிக்கவும்.</p>
 
-  <form method="post" action="{{ url_for('actual_edit_day_save', year=year, month=month, day_id=day.id) }}">
-    <label>ஆய்வு / படிவம்</label>
-    <div class="check-row">
-      <label><input type="checkbox" name="has_visit" id="has_visit" onchange="toggleActualFields()" {% if day.has_visit %}checked{% endif %}> பார்வை</label>
-      <label><input type="checkbox" name="has_survey" id="has_survey" onchange="toggleActualFields()" {% if day.has_survey %}checked{% endif %}> ஆய்வு</label>
-      {% if day.day_date.weekday() not in (5, 6) %}
-      <label><input type="checkbox" name="has_office" id="has_office" onchange="toggleActualFields()" {% if day.has_office %}checked{% endif %}> அலுவலகப் பணி</label>
-      {% endif %}
-      <label><input type="checkbox" name="has_leave" id="has_leave" onchange="toggleActualFields()" {% if day.has_leave %}checked{% endif %}> விடுப்பு</label>
-    </div>
-
-    <div class="field-group" id="leave_group">
-      <label>விடுப்பு வகை</label>
-      <select name="leave_type" id="leave_type_select">
-        <option value="">-- விடுப்பு வகை தேர்வு செய்யவும் --</option>
-        {% for lt in leave_types %}
-          <option value="{{ lt }}" {% if lt == day.leave_type %}selected{% endif %}>{{ lt }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div class="field-group" id="visit_group">
-      <label>பார்வை நூலகங்கள் (அதிகபட்சம் {{ max_libraries }})</label>
-      {{ library_checklist("visit_libraries", "visit_checklist", "visit_filter", "visit_count", libraries, max_libraries, day.visit_library_list) }}
-    </div>
-
-    <div class="field-group" id="survey_group">
-      <label>ஆய்வு ஆண்டு</label>
-      <select name="survey_year" id="survey_year_select">
-        <option value="">-- ஆண்டு தேர்வு செய்யவும் --</option>
-        {% for sy in survey_years %}
-          <option value="{{ sy }}" {% if sy == day.survey_year %}selected{% endif %}>{{ sy }}</option>
-        {% endfor %}
-      </select>
-      <label>ஆய்வு நூலகங்கள் (அதிகபட்சம் {{ max_libraries }})</label>
-      {{ library_checklist("survey_libraries", "survey_checklist", "survey_filter", "survey_count", libraries, max_libraries, day.survey_library_list) }}
-    </div>
-
-    <label>எடுத்துக் கொண்ட நேரம்</label>
-    <div class="time-row">
-      <div class="time-field">
-        <select name="time_from" id="time_from_select">
-          <option value="">முற்பகல்</option>
-          {% for t in time_from_options %}
-            <option value="{{ t }}" {% if t == day.time_from %}selected{% endif %}>{{ t }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="time-field">
-        <select name="time_to" id="time_to_select">
-          <option value="">பிற்பகல்</option>
-          {% for t in time_to_options %}
-            <option value="{{ t }}" {% if t == day.time_to %}selected{% endif %}>{{ t }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-
-    <button type="submit">மாற்றங்களைச் சேமி</button>
-    <a class="btn btn-secondary" href="{{ url_for('actual_view', year=year, month=month) }}">ரத்து செய்</a>
+  <div class="chat-wrap" id="chatWrap"></div>
+  <form method="post" action="{{ url_for('actual_edit_day_save', year=year, month=month, day_id=day.id) }}" id="dayForm" style="display:none;">
+    <input type="checkbox" name="has_visit" id="has_visit_input" style="display:none;">
+    <input type="checkbox" name="has_survey" id="has_survey_input" style="display:none;">
+    <input type="checkbox" name="has_office" id="has_office_input" style="display:none;">
+    <input type="checkbox" name="has_leave" id="has_leave_input" style="display:none;">
+    <input type="hidden" name="survey_year" id="survey_year_input">
+    <input type="hidden" name="leave_type" id="leave_type_input">
+    <input type="hidden" name="time_from" id="time_from_input">
+    <input type="hidden" name="time_to" id="time_to_input">
+    <div id="dynamicLibInputs"></div>
   </form>
+  <a class="btn btn-secondary" href="{{ url_for('actual_view', year=year, month=month) }}">ரத்து செய்</a>
 </div>
 
-{% include "_actual_scripts.html" %}
+<script src="{{ url_for('static', filename='chat.js') }}"></script>
+<script>
+(function () {
+  var libraries = {{ libraries | tojson }};
+  var surveyYears = {{ survey_years | tojson }};
+  var leaveTypes = {{ leave_types | tojson }};
+  var timeFromOptions = {{ time_from_options | tojson }};
+  var timeToOptions = {{ time_to_options | tojson }};
+  var maxLibraries = {{ max_libraries }};
+  var officeAllowed = {{ 'true' if day.day_date.weekday() not in (5, 6) else 'false' }};
+  var dateLabel = "{{ day.day_date.strftime('%d-%m-%Y') }} ({{ day.weekday }})";
+
+  var wrap = document.getElementById('chatWrap');
+  var form = document.getElementById('dayForm');
+  var libraryItems = libraries.map(function (l) {
+    return { label: l.name + (l.type ? ' (' + l.type + ')' : ''), value: l.name };
+  });
+
+  var state, queue;
+
+  function resetState() {
+    state = { visit: false, survey: false, office: false, leave: false,
+      surveyYear: '', surveyLibs: [], visitLibs: [], leaveType: '', timeFrom: '', timeTo: '' };
+  }
+  resetState();
+
+  function askTasks() {
+    chatBot(wrap, dateLabel + " அன்று என்னென்ன பணி செய்தீர்கள்? (பல தேர்வு செய்யலாம்)");
+    var options = [
+      { label: 'பார்வை', value: 'visit' },
+      { label: 'ஆய்வு', value: 'survey' },
+    ];
+    if (officeAllowed) options.push({ label: 'அலுவலகப் பணி', value: 'office' });
+    options.push({ label: 'விடுப்பு', value: 'leave' });
+    chatMultiChips(wrap, options, 'தொடர்க ▶', function (selected) {
+      var labels = selected.map(function (s) { return s.label; });
+      chatUser(wrap, labels.join(', '));
+      selected.forEach(function (s) { state[s.value] = true; });
+      buildQueue();
+      runNext();
+    }, 1);
+  }
+
+  function buildQueue() {
+    queue = [];
+    if (state.survey) { queue.push(askSurveyYear); queue.push(askSurveyLibraries); }
+    if (state.visit) queue.push(askVisitLibraries);
+    if (state.leave) queue.push(askLeaveType);
+    var onlyLeave = state.leave && !(state.visit || state.survey || state.office);
+    if (!onlyLeave) { queue.push(askTimeFrom); queue.push(askTimeTo); }
+  }
+
+  function runNext() {
+    if (queue.length === 0) { confirmSave(); return; }
+    var fn = queue.shift();
+    fn(runNext);
+  }
+
+  function askSurveyYear(next) {
+    chatBot(wrap, "ஆய்வு ஆண்டு?");
+    chatChips(wrap, surveyYears.map(function (sy) { return { label: sy, value: sy }; }), function (choice) {
+      chatUser(wrap, choice.label);
+      state.surveyYear = choice.value;
+      next();
+    });
+  }
+
+  function askSurveyLibraries(next) {
+    chatBot(wrap, "ஆய்வுக்கான நூலகங்கள் (அதிகபட்சம் " + maxLibraries + ")");
+    chatSearchChips(wrap, libraryItems, maxLibraries, 'முடிந்தது', function (selected) {
+      var labels = selected.map(function (s) { return s.label; });
+      chatUser(wrap, labels.join(', '));
+      state.surveyLibs = selected.map(function (s) { return s.value; });
+      next();
+    });
+  }
+
+  function askVisitLibraries(next) {
+    chatBot(wrap, "பார்வைக்கான நூலகங்கள் (அதிகபட்சம் " + maxLibraries + ")");
+    chatSearchChips(wrap, libraryItems, maxLibraries, 'முடிந்தது', function (selected) {
+      var labels = selected.map(function (s) { return s.label; });
+      chatUser(wrap, labels.join(', '));
+      state.visitLibs = selected.map(function (s) { return s.value; });
+      next();
+    });
+  }
+
+  function askLeaveType(next) {
+    chatBot(wrap, "விடுப்பு வகை?");
+    chatChips(wrap, leaveTypes.map(function (lt) { return { label: lt, value: lt }; }), function (choice) {
+      chatUser(wrap, choice.label);
+      state.leaveType = choice.value;
+      next();
+    });
+  }
+
+  function askTimeFrom(next) {
+    chatBot(wrap, "காலை எடுத்துக் கொண்ட நேரம்?");
+    chatChips(wrap, timeFromOptions.map(function (t) { return { label: t, value: t }; }), function (choice) {
+      chatUser(wrap, choice.label);
+      state.timeFrom = choice.value;
+      next();
+    });
+  }
+
+  function askTimeTo(next) {
+    chatBot(wrap, "மாலை எடுத்துக் கொண்ட நேரம்?");
+    chatChips(wrap, timeToOptions.map(function (t) { return { label: t, value: t }; }), function (choice) {
+      chatUser(wrap, choice.label);
+      state.timeTo = choice.value;
+      next();
+    });
+  }
+
+  function confirmSave() {
+    chatBot(wrap, "சரி, இந்த திருத்தத்தைச் சேமிக்கலாமா?");
+    chatChips(wrap, [{ label: '✅ சேமி', value: 'save' }, { label: '🔄 மீண்டும்', value: 'restart' }], function (choice) {
+      chatUser(wrap, choice.label);
+      if (choice.value === 'save') {
+        submitForm();
+      } else {
+        wrap.innerHTML = '';
+        resetState();
+        askTasks();
+      }
+    });
+  }
+
+  function submitForm() {
+    document.getElementById('has_visit_input').checked = state.visit;
+    document.getElementById('has_survey_input').checked = state.survey;
+    document.getElementById('has_office_input').checked = state.office;
+    document.getElementById('has_leave_input').checked = state.leave;
+    document.getElementById('survey_year_input').value = state.surveyYear;
+    document.getElementById('leave_type_input').value = state.leaveType;
+    document.getElementById('time_from_input').value = state.timeFrom;
+    document.getElementById('time_to_input').value = state.timeTo;
+
+    var dyn = document.getElementById('dynamicLibInputs');
+    dyn.innerHTML = '';
+    state.visitLibs.forEach(function (v) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = 'visit_libraries'; inp.value = v;
+      dyn.appendChild(inp);
+    });
+    state.surveyLibs.forEach(function (v) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = 'survey_libraries'; inp.value = v;
+      dyn.appendChild(inp);
+    });
+
+    form.submit();
+  }
+
+  askTasks();
+})();
+</script>
 {% endblock %}
