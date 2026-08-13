@@ -1071,7 +1071,7 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
 
     story.append(T("மேற்கண்ட உத்தேச பயணத் திட்டத்திற்கு ஒப்புதல் வழங்கப்படுகிறது."))
     story.append(Spacer(1, 22))
-    story.append(T(f"{LETTER_RECEIVER_DESIGNATION}(பொ),<br/>{LETTER_RECEIVER_OFFICE_LINE2}", align="right"))
+    story.append(T(f"{LETTER_RECEIVER_DESIGNATION},<br/>{LETTER_RECEIVER_OFFICE_LINE2}", align="right"))
     story.append(Spacer(1, 22))
 
     story.append(T(
@@ -1155,7 +1155,7 @@ def generate_actual_report_pdf(plan: ActualTourPlan) -> bytes:
         f"{month_name}-{plan.year} மாதம் உண்மை பயண நாட்குறிப்பு அனுமதி அளிக்கப்படுகிறது."
     ))
     story.append(Spacer(1, 22))
-    story.append(T(f"{LETTER_RECEIVER_DESIGNATION}(பொ),<br/>{DISTRICT_NAME}.", align="right"))
+    story.append(T(f"{LETTER_RECEIVER_DESIGNATION},<br/>{DISTRICT_NAME}.", align="right"))
 
     doc.build(story)
     return buf.getvalue()
