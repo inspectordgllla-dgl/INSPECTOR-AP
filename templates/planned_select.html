@@ -34,6 +34,7 @@
         <button type="button" class="btn btn-danger" onclick="toggleDeleteForm('del-{{ p.year }}-{{ p.month }}')">அழி</button>
         <form id="del-{{ p.year }}-{{ p.month }}" method="post" action="{{ url_for('delete_month', year=p.year, month=p.month) }}" class="delete-form" style="display:none;">
           <input type="hidden" name="next" value="planned_select">
+          <input type="hidden" name="target" value="planned">
           <input type="password" name="password" placeholder="கடவுச்சொல்" required>
           <button type="submit" class="btn btn-danger">உறுதி</button>
         </form>
@@ -57,7 +58,7 @@ function toggleDeleteForm(id) {
   var f = document.getElementById(id);
   if (!f) return;
   if (f.style.display === 'none') {
-    if (!confirm('இந்த மாதத்திற்கான உத்தேசப் பயணத் திட்டம் மற்றும் உண்மைப் பயணத் திட்டம் இரண்டும் நிரந்தரமாக அழிக்கப்படும். தொடரவா?')) return;
+    if (!confirm('இந்த மாதத்திற்கான உத்தேசப் பயணத் திட்டம் நிரந்தரமாக அழிக்கப்படும் (உண்மைப் பயணத் திட்டம் பாதிக்கப்படாது). தொடரவா?')) return;
     f.style.display = 'flex';
   } else {
     f.style.display = 'none';

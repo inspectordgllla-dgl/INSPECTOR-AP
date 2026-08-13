@@ -188,6 +188,11 @@ TIME_FROM_OPTIONS = ["08.00", "09.00"]
 TIME_TO_OPTIONS = ["05.00", "06.00", "07.00", "08.00"]
 MAX_LIBRARIES_PER_DAY = 6
 
+# "அலுவலகப் பணி" தேர்வு செய்யும்போது நேரம் தேர்வு காட்டப்படாது — இந்த
+# நிலையான இயல்புநேரம் தானாகப் பயன்படுத்தப்படும்.
+OFFICE_DEFAULT_TIME_FROM = "09.45"
+OFFICE_DEFAULT_TIME_TO = "05.45"
+
 
 # ---------------------------------------------------------------------------
 # DATA FETCHING (Google Sheet -> CSV)
@@ -368,6 +373,24 @@ def cascade_autofill(plan, holidays):
             db.session.commit()
 
     return next_pending
+
+
+def find_duplicate_survey_library(plan, survey_libs, exclude_day_id=None):
+    """plan-இல் உள்ள மற்ற நாட்களில் ஏற்கனவே 'ஆய்வு' பதிவாகியுள்ள நூலகங்களுடன்
+    survey_libs-ல் ஏதேனும் மோதுகிறதா எனச் சரிபார்க்கும். மோதல் இருந்தால்
+    (நூலகம் பெயர், அந்த நாள்) திருப்பும், இல்லையெனில் (None, None)."""
+    wanted = set(survey_libs or [])
+    if not wanted:
+        return None, None
+    for day in plan.days:
+        if exclude_day_id and day.id == exclude_day_id:
+            continue
+        if not day.has_survey:
+            continue
+        overlap = wanted & set(day.survey_library_list)
+        if overlap:
+            return next(iter(overlap)), day.day_date
+    return None, None
 
 
 def get_or_create_actual_plan(year, month):
@@ -694,6 +717,11 @@ def _read_actual_day_form(form):
     if not (has_visit or has_survey or has_office or has_leave):
         return None, "பார்வை / ஆய்வு / அலுவலகப் பணி / விடுப்பு — ஒன்றையாவது தேர்வு செய்யவும்."
 
+    # விடுப்பு, மற்ற மூன்று வகைகளுடன் (ஆய்வு / பார்வை / அலுவலகப் பணி) ஒரே நாளில்
+    # சேர்ந்து தேர்வு செய்ய முடியாது — ஒன்று மட்டும் தேர்வு செய்ய வேண்டும்.
+    if has_leave and (has_visit or has_survey or has_office):
+        return None, "விடுப்பு தேர்வு செய்தால் ஆய்வு / பார்வை / அலுவலகப் பணி ஆகியவற்றைச் சேர்த்துத் தேர்வு செய்ய முடியாது."
+
     if has_visit and not visit_libs:
         return None, "பார்வைக்கு குறைந்தது ஒரு நூலகம் தேர்வு செய்யவும்."
 
@@ -708,6 +736,11 @@ def _read_actual_day_form(form):
 
     if has_leave and not leave_type:
         return None, "விடுப்பு வகையைத் தேர்வு செய்யவும்."
+
+    # அலுவலகப் பணி தேர்வு செய்தால் நேரம் தேர்வு தேவையில்லை — நிலையான
+    # இயல்புநேரம் (09.45 மு.ப - 05.45 பிப) தானாகப் பயன்படுத்தப்படும்.
+    if has_office:
+        time_from, time_to = OFFICE_DEFAULT_TIME_FROM, OFFICE_DEFAULT_TIME_TO
 
     # அந்த நாள் முழுக்க விடுப்பு மட்டும் எனில் ("பார்வை/ஆய்வு/அலுவலகப் பணி" இல்லாமல்)
     # "எடுத்துக் கொண்ட நேரம்" கட்டாயமில்லை.
@@ -749,6 +782,15 @@ def actual_save_day(year, month):
     if data["has_office"] and d.weekday() in OFFICE_WORK_EXCLUDED_WEEKDAYS:
         flash("சனி / ஞாயிறு நாட்களில் 'அலுவலகப் பணி' தேர்வு செய்ய முடியாது.")
         return redirect(url_for("actual_view", year=year, month=month))
+
+    if data["has_survey"]:
+        dup_lib, dup_date = find_duplicate_survey_library(plan, data["survey_libs"])
+        if dup_lib:
+            flash(
+                f"இந்த நூலகம் ({dup_lib}) இதே மாதத்தில் {dup_date.strftime('%d.%m.%Y')} "
+                f"தேதியில் ஆய்வு மேற்கொள்ளப்பட்டுள்ளது. தயவு செய்து வேறு நூலகம் தேர்வு செய்யவும்."
+            )
+            return redirect(url_for("actual_view", year=year, month=month))
 
     place_display = build_actual_content(
         data["has_survey"], data["survey_year"], data["survey_libs"],
@@ -825,6 +867,15 @@ def actual_edit_day_save(year, month, day_id):
         flash("சனி / ஞாயிறு நாட்களில் 'அலுவலகப் பணி' தேர்வு செய்ய முடியாது.")
         return redirect(url_for("actual_edit_day_form", year=year, month=month, day_id=day_id))
 
+    if data["has_survey"]:
+        dup_lib, dup_date = find_duplicate_survey_library(plan, data["survey_libs"], exclude_day_id=day.id)
+        if dup_lib:
+            flash(
+                f"இந்த நூலகம் ({dup_lib}) இதே மாதத்தில் {dup_date.strftime('%d.%m.%Y')} "
+                f"தேதியில் ஆய்வு மேற்கொள்ளப்பட்டுள்ளது. தயவு செய்து வேறு நூலகம் தேர்வு செய்யவும்."
+            )
+            return redirect(url_for("actual_edit_day_form", year=year, month=month, day_id=day_id))
+
     day.has_visit = data["has_visit"]
     day.visit_libraries = "\n".join(data["visit_libs"])
     day.has_survey = data["has_survey"]
@@ -878,19 +929,34 @@ def delete_month(year, month):
     if next_page not in ("planned_select", "actual_select"):
         next_page = "planned_select"
 
+    # target: "planned" -> உத்தேசப் பயணத் திட்டம் மட்டும்
+    #         "actual"  -> உண்மைப் பயணத் திட்டம் மட்டும்
+    #         "both"    -> இரண்டும் (பழைய behaviour, form-ல் target அனுப்பாவிட்டால்)
+    target = request.form.get("target") or "both"
+    if target not in ("planned", "actual", "both"):
+        target = "both"
+
     if password != DELETE_PASSWORD:
         flash("கடவுச்சொல் தவறு — எதுவும் அழிக்கப்படவில்லை.")
         return redirect(url_for(next_page))
 
-    planned = TourPlan.query.filter_by(year=year, month=month).first()
-    if planned:
-        db.session.delete(planned)
-    actual = ActualTourPlan.query.filter_by(year=year, month=month).first()
-    if actual:
-        db.session.delete(actual)
+    deleted_labels = []
+    if target in ("planned", "both"):
+        planned = TourPlan.query.filter_by(year=year, month=month).first()
+        if planned:
+            db.session.delete(planned)
+            deleted_labels.append("உத்தேசப் பயணத் திட்டம்")
+    if target in ("actual", "both"):
+        actual = ActualTourPlan.query.filter_by(year=year, month=month).first()
+        if actual:
+            db.session.delete(actual)
+            deleted_labels.append("உண்மைப் பயணத் திட்டம்")
     db.session.commit()
 
-    flash(f"{TAMIL_MONTHS[month]} {year} — உத்தேசப் பயணத் திட்டம் மற்றும் உண்மைப் பயணத் திட்டம் அழிக்கப்பட்டது.")
+    if deleted_labels:
+        flash(f"{TAMIL_MONTHS[month]} {year} — {' மற்றும் '.join(deleted_labels)} அழிக்கப்பட்டது.")
+    else:
+        flash(f"{TAMIL_MONTHS[month]} {year} — அழிக்க எதுவும் இல்லை.")
     return redirect(url_for(next_page))
 
 

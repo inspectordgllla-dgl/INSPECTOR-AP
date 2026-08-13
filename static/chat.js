@@ -40,11 +40,28 @@ function chatChips(wrap, items, onPick) {
 }
 
 // பல தேர்வு (multi-select) chips + "தொடர்க" பட்டன். minSelect தேர்வுகள் ஆனதும் பட்டன் இயங்கும்.
-function chatMultiChips(wrap, items, continueLabel, onDone, minSelect) {
+// exclusiveValues (optional): இதில் உள்ள value-கள் "தனித்தேர்வு" — இவற்றில் ஒன்றைத்
+// தேர்ந்தெடுத்தால் மற்ற அனைத்தும் (exclusive/non-exclusive) தானாக நீக்கப்படும்;
+// exclusive அல்லாத ஒன்றைத் தேர்ந்தெடுத்தால், ஏற்கனவே தேர்வான exclusive value-கள்
+// தானாக நீக்கப்படும் (எ.கா. "விடுப்பு" vs "ஆய்வு/பார்வை/அலுவலகப் பணி").
+function chatMultiChips(wrap, items, continueLabel, onDone, minSelect, exclusiveValues) {
   minSelect = minSelect || 0;
+  exclusiveValues = exclusiveValues || [];
   var row = document.createElement('div');
   row.className = 'chat-options';
   var selected = [];
+  var entries = [];
+
+  function isExclusive(item) {
+    return exclusiveValues.indexOf(item.value) !== -1;
+  }
+
+  function refreshUI() {
+    entries.forEach(function (entry) {
+      entry.btn.classList.toggle('selected', selected.indexOf(entry.item) >= 0);
+    });
+    contBtn.disabled = selected.length < minSelect;
+  }
 
   items.forEach(function (item) {
     var b = document.createElement('button');
@@ -55,13 +72,15 @@ function chatMultiChips(wrap, items, continueLabel, onDone, minSelect) {
       var idx = selected.indexOf(item);
       if (idx >= 0) {
         selected.splice(idx, 1);
-        b.classList.remove('selected');
+      } else if (isExclusive(item)) {
+        selected = [item];
       } else {
+        selected = selected.filter(function (s) { return !isExclusive(s); });
         selected.push(item);
-        b.classList.add('selected');
       }
-      contBtn.disabled = selected.length < minSelect;
+      refreshUI();
     });
+    entries.push({ item: item, btn: b });
     row.appendChild(b);
   });
 
