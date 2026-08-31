@@ -16,9 +16,9 @@
   <form method="post" action="{{ url_for('planned_save_day', year=year, month=month) }}" id="dayForm" style="display:none;">
     <input type="hidden" name="day_date" value="{{ next_pending.isoformat() }}">
     <input type="hidden" name="work_type" id="work_type_input">
-    <input type="hidden" name="library_name" id="library_name_input">
     <input type="hidden" name="survey_year" id="survey_year_input">
     <input type="hidden" name="leave_type" id="leave_type_input">
+    <div id="dynamicLibInputs"></div>
   </form>
 </div>
 {% endif %}
@@ -57,6 +57,7 @@
   var libraries = {{ libraries | tojson }};
   var surveyYears = {{ survey_years | tojson }};
   var leaveTypes = {{ leave_types | tojson }};
+  var maxSurveyLibraries = {{ max_survey_libraries }};
   var dateLabel = "{{ next_pending.strftime('%d-%m-%Y') }} ({{ ['திங்கள்','செவ்வாய்','புதன்','வியாழன்','வெள்ளி','சனி','ஞாயிறு'][next_pending.weekday()] }})";
 
   var wrap = document.getElementById('chatWrap');
@@ -64,6 +65,8 @@
   var libraryItems = libraries.map(function (l) {
     return { label: l.name + (l.type ? ' (' + l.type + ')' : ''), value: l.name };
   });
+
+  var surveyLibs = [];
 
   function askWorkType() {
     chatBot(wrap, dateLabel + " அன்று என்ன பணி?");
@@ -81,11 +84,11 @@
   }
 
   function askLibrary() {
-    chatBot(wrap, "எந்த நூலகம்?");
-    chatSearchChips(wrap, libraryItems, 1, 'தேர்வு முடிந்தது', function (selected) {
-      var pick = selected[0];
-      chatUser(wrap, pick.label);
-      document.getElementById('library_name_input').value = pick.value;
+    chatBot(wrap, "எந்த நூலகங்கள்? (அதிகபட்சம் " + maxSurveyLibraries + ")");
+    chatSearchChips(wrap, libraryItems, maxSurveyLibraries, 'தேர்வு முடிந்தது', function (selected) {
+      var labels = selected.map(function (s) { return s.label; });
+      chatUser(wrap, labels.join(', '));
+      surveyLibs = selected.map(function (s) { return s.value; });
       askSurveyYear();
     });
   }
@@ -113,16 +116,27 @@
     chatChips(wrap, [{ label: '✅ சேமி', value: 'save' }, { label: '🔄 மீண்டும்', value: 'restart' }], function (choice) {
       chatUser(wrap, choice.label);
       if (choice.value === 'save') {
-        form.submit();
+        submitForm();
       } else {
         wrap.innerHTML = '';
         document.getElementById('work_type_input').value = '';
-        document.getElementById('library_name_input').value = '';
         document.getElementById('survey_year_input').value = '';
         document.getElementById('leave_type_input').value = '';
+        surveyLibs = [];
         askWorkType();
       }
     });
+  }
+
+  function submitForm() {
+    var dyn = document.getElementById('dynamicLibInputs');
+    dyn.innerHTML = '';
+    surveyLibs.forEach(function (v) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = 'library_name'; inp.value = v;
+      dyn.appendChild(inp);
+    });
+    form.submit();
   }
 
   askWorkType();

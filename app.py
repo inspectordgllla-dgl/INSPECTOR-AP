@@ -187,6 +187,7 @@ def work_types_for_day(d):
 TIME_FROM_OPTIONS = ["08.00", "09.00"]
 TIME_TO_OPTIONS = ["05.00", "06.00", "07.00", "08.00"]
 MAX_LIBRARIES_PER_DAY = 6
+MAX_PLANNED_SURVEY_LIBRARIES = 2  # உத்தேசப் பயணத் திட்டத்தில் 'ஆய்வு'க்கு அதிகபட்ச நூலகங்கள்
 
 # "அலுவலகப் பணி" தேர்வு செய்யும்போது நேரம் தேர்வு காட்டப்படாது — இந்த
 # நிலையான இயல்புநேரம் தானாகப் பயன்படுத்தப்படும்.
@@ -286,12 +287,14 @@ def classify_day(d: date, holidays: dict):
     return "work", None
 
 
-def build_place_display(work_type, library_name, survey_year, leave_type=None):
+def build_place_display(work_type, library_names, survey_year, leave_type=None):
     if work_type == "நூலகங்கள் ஆய்வு":
+        if isinstance(library_names, str):
+            library_names = [library_names] if library_names else []
         parts = [work_type]
         extra = []
-        if library_name:
-            extra.append(library_name)
+        if library_names:
+            extra.append(", ".join(library_names))
         if survey_year:
             extra.append(f"({survey_year})")
         if extra:
@@ -484,6 +487,7 @@ def planned_view(year, month):
         work_types=work_types_for_day(next_pending),
         survey_years=SURVEY_YEARS,
         leave_types=LEAVE_TYPES,
+        max_survey_libraries=MAX_PLANNED_SURVEY_LIBRARIES,
         month_name=TAMIL_MONTHS[month],
         year=year,
         month=month,
@@ -495,7 +499,7 @@ def planned_save_day(year, month):
     plan = get_or_create_plan(year, month)
     day_str = request.form.get("day_date")
     work_type = (request.form.get("work_type") or "").strip()
-    library_name = (request.form.get("library_name") or "").strip()
+    library_names = [x.strip() for x in request.form.getlist("library_name") if x.strip()]
     survey_year = (request.form.get("survey_year") or "").strip()
     leave_type = (request.form.get("leave_type") or "").strip()
 
@@ -513,15 +517,19 @@ def planned_save_day(year, month):
         flash("சனி / ஞாயிறு நாட்களில் 'அலுவலகப் பணி' தேர்வு செய்ய முடியாது.")
         return redirect(url_for("planned_view", year=year, month=month))
 
-    if work_type == "நூலகங்கள் ஆய்வு" and (not library_name or not survey_year):
+    if work_type == "நூலகங்கள் ஆய்வு" and (not library_names or not survey_year):
         flash("நூலகங்கள் ஆய்வு-க்கு நூலகம் பெயர் மற்றும் ஆய்வு ஆண்டு கட்டாயம்.")
+        return redirect(url_for("planned_view", year=year, month=month))
+
+    if work_type == "நூலகங்கள் ஆய்வு" and len(library_names) > MAX_PLANNED_SURVEY_LIBRARIES:
+        flash(f"ஆய்வுக்கு அதிகபட்சம் {MAX_PLANNED_SURVEY_LIBRARIES} நூலகங்கள் மட்டுமே தேர்வு செய்யலாம்.")
         return redirect(url_for("planned_view", year=year, month=month))
 
     if work_type == "விடுப்பு" and not leave_type:
         flash("விடுப்பு வகையைத் தேர்வு செய்யவும்.")
         return redirect(url_for("planned_view", year=year, month=month))
 
-    place_display = build_place_display(work_type, library_name, survey_year, leave_type)
+    place_display = build_place_display(work_type, library_names, survey_year, leave_type)
 
     row = TourPlanDay(
         plan_id=plan.id,
@@ -529,7 +537,7 @@ def planned_save_day(year, month):
         weekday=TAMIL_WEEKDAYS[d.weekday()],
         day_type="work",
         work_type=work_type,
-        library_name=library_name if work_type == "நூலகங்கள் ஆய்வு" else None,
+        library_name="\n".join(library_names) if work_type == "நூலகங்கள் ஆய்வு" else None,
         survey_year=survey_year if work_type == "நூலகங்கள் ஆய்வு" else None,
         leave_type=leave_type if work_type == "விடுப்பு" else None,
         place_display=place_display,
@@ -558,6 +566,7 @@ def planned_edit_day_form(year, month, day_id):
         plan=plan, day=day, libraries=libraries,
         work_types=work_types_for_day(day.day_date), survey_years=SURVEY_YEARS,
         leave_types=LEAVE_TYPES,
+        max_survey_libraries=MAX_PLANNED_SURVEY_LIBRARIES,
         month_name=TAMIL_MONTHS[month], year=year, month=month,
     )
 
@@ -575,7 +584,7 @@ def planned_edit_day_save(year, month, day_id):
         return redirect(url_for("planned_view", year=year, month=month))
 
     work_type = (request.form.get("work_type") or "").strip()
-    library_name = (request.form.get("library_name") or "").strip()
+    library_names = [x.strip() for x in request.form.getlist("library_name") if x.strip()]
     survey_year = (request.form.get("survey_year") or "").strip()
     leave_type = (request.form.get("leave_type") or "").strip()
 
@@ -587,8 +596,12 @@ def planned_edit_day_save(year, month, day_id):
         flash("சனி / ஞாயிறு நாட்களில் 'அலுவலகப் பணி' தேர்வு செய்ய முடியாது.")
         return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
 
-    if work_type == "நூலகங்கள் ஆய்வு" and (not library_name or not survey_year):
+    if work_type == "நூலகங்கள் ஆய்வு" and (not library_names or not survey_year):
         flash("நூலகங்கள் ஆய்வு-க்கு நூலகம் பெயர் மற்றும் ஆய்வு ஆண்டு கட்டாயம்.")
+        return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
+
+    if work_type == "நூலகங்கள் ஆய்வு" and len(library_names) > MAX_PLANNED_SURVEY_LIBRARIES:
+        flash(f"ஆய்வுக்கு அதிகபட்சம் {MAX_PLANNED_SURVEY_LIBRARIES} நூலகங்கள் மட்டுமே தேர்வு செய்யலாம்.")
         return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
 
     if work_type == "விடுப்பு" and not leave_type:
@@ -596,10 +609,10 @@ def planned_edit_day_save(year, month, day_id):
         return redirect(url_for("planned_edit_day_form", year=year, month=month, day_id=day_id))
 
     day.work_type = work_type
-    day.library_name = library_name if work_type == "நூலகங்கள் ஆய்வு" else None
+    day.library_name = "\n".join(library_names) if work_type == "நூலகங்கள் ஆய்வு" else None
     day.survey_year = survey_year if work_type == "நூலகங்கள் ஆய்வு" else None
     day.leave_type = leave_type if work_type == "விடுப்பு" else None
-    day.place_display = build_place_display(work_type, library_name, survey_year, leave_type)
+    day.place_display = build_place_display(work_type, library_names, survey_year, leave_type)
     db.session.commit()
 
     flash("இந்த நாளின் பதிவு திருத்தப்பட்டது.")
