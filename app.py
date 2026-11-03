@@ -1,4 +1,5 @@
 import os
+import re
 import calendar
 from urllib.parse import quote
 from datetime import datetime, date
@@ -1077,10 +1078,20 @@ def intimation_delete(rec_id):
 
 
 def _intimation_pdf_response(rec):
+    # கோப்புப் பெயர்: "<நூலகம் பெயர்>- ஆய்வு தகவல்.pdf". HTTP header-ல் தமிழ் எழுத்து
+    # நேரடியாகப் போகாது என்பதால் ASCII பெயர் + RFC 5987 filename* இரண்டையும் தருகிறோம்.
+    safe_name = re.sub(r'[\\/:*?"<>|\r\n]+', " ", rec.library_name or "").strip()
+    tamil_filename = f"{safe_name}- ஆய்வு தகவல்.pdf"
+    ascii_filename = f"inspection-intimation-{rec.id}.pdf"
     return Response(
         generate_inspection_intimation_pdf(rec),
         mimetype="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=inspection-intimation-{rec.id}.pdf"},
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename={ascii_filename}; "
+                f"filename*=UTF-8''{quote(tamil_filename)}"
+            )
+        },
     )
 
 
