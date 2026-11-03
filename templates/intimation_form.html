@@ -48,7 +48,14 @@
       <td>{{ r.library_name }}</td>
       <td>{{ r.survey_year }}</td>
       <td>{{ r.inspection_date.strftime('%d.%m.%Y') }}</td>
-      <td><a class="btn btn-secondary" style="margin-top:0;" href="{{ url_for('intimation_pdf', rec_id=r.id) }}">PDF</a></td>
+      <td>
+        <a class="btn btn-secondary" style="margin-top:0;" href="{{ url_for('intimation_pdf', rec_id=r.id) }}">PDF</a>
+        <button type="button" class="btn btn-danger" style="margin-top:0;" onclick="toggleDeleteForm('del-{{ r.id }}')">அழி</button>
+        <form id="del-{{ r.id }}" method="post" action="{{ url_for('intimation_delete', rec_id=r.id) }}" class="delete-form" style="display:none;">
+          <input type="password" name="password" placeholder="கடவுச்சொல்" required>
+          <button type="submit" class="btn btn-danger">உறுதி</button>
+        </form>
+      </td>
     </tr>
     {% endfor %}
   </table>
@@ -56,6 +63,16 @@
 {% endif %}
 
 <script>
+function toggleDeleteForm(id) {
+  var f = document.getElementById(id);
+  if (!f) return;
+  if (f.style.display === 'none') {
+    if (!confirm('இந்தப் பதிவு நிரந்தரமாக அழிக்கப்படும். தொடரவா?')) return;
+    f.style.display = 'flex';
+  } else {
+    f.style.display = 'none';
+  }
+}
 (function () {
   var libs = {{ libraries | tojson }};
   var typeSel = document.getElementById('library_type');

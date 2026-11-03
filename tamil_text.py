@@ -68,7 +68,9 @@ def measure_width_pt(text, font_path, font_size_pt):
 
 def rasterize_line(text, font_path, font_size_pt, dpi=200):
     """Shape + rasterize a single line of text.
-    Returns (PIL.Image RGB, width_pt, height_pt) or None for blank text.
+    Returns (PIL.Image RGB, width_pt, height_pt, baseline_pt) or None for blank
+    text. baseline_pt is the distance from the image's bottom edge up to the
+    text baseline, so separately rendered pieces can share one baseline.
     """
     if not text or not text.strip():
         return None
@@ -125,7 +127,7 @@ def rasterize_line(text, font_path, font_size_pt, dpi=200):
         canvas[y0:y1, x0:x1] = np.minimum(dst, src)
 
     img = Image.fromarray(canvas, mode="L").convert("RGB")
-    return img, width_px / scale, height_px / scale
+    return img, width_px / scale, height_px / scale, (height_px + min_top) / scale
 
 
 def _split_graphemes(word):
@@ -252,13 +254,15 @@ class TamilText(Flowable):
             if len(rendered) > 1 and total < avail:
                 gap = (avail - total) / (len(rendered) - 1)
                 x = x0
-                for img, w_pt, h_pt in rendered:
-                    c.drawImage(ImageReader(img), x, y, width=w_pt, height=h_pt)
+                base_y = y + self.font_size_pt * 0.25
+                for img, w_pt, h_pt, b_pt in rendered:
+                    c.drawImage(ImageReader(img), x, base_y - b_pt, width=w_pt, height=h_pt)
                     x += w_pt + gap
                 return
         result = rasterize_line(line, self.font_path, self.font_size_pt, dpi=self.dpi)
         if result:
-            img, w_pt, h_pt = result
+            img, w_pt, h_pt, b_pt = result
+            y = y + self.font_size_pt * 0.25 - b_pt
             if self.align == "right":
                 x = self._width - w_pt
             elif self.align == "center":

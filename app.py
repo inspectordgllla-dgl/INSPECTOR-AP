@@ -1063,6 +1063,19 @@ def intimation_pdf(rec_id):
     return _intimation_pdf_response(rec)
 
 
+@app.route("/reports/intimation/<int:rec_id>/delete", methods=["POST"])
+def intimation_delete(rec_id):
+    if (request.form.get("password") or "") != DELETE_PASSWORD:
+        flash("கடவுச்சொல் தவறு — எதுவும் அழிக்கப்படவில்லை.")
+        return redirect(url_for("intimation_form"))
+    rec = db.session.get(InspectionIntimation, rec_id)
+    if rec is not None:
+        db.session.delete(rec)
+        db.session.commit()
+        flash("பதிவு அழிக்கப்பட்டது.")
+    return redirect(url_for("intimation_form"))
+
+
 def _intimation_pdf_response(rec):
     return Response(
         generate_inspection_intimation_pdf(rec),
@@ -1182,10 +1195,9 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
     return buf.getvalue()
 
 
-def _library_display(name):
-    """'நூலகம்' என்ற சொல் பெயரில் இல்லையெனில் இணைக்கும்."""
-    name = (name or "").strip()
-    return name if "நூலகம்" in name else f"{name} நூலகம்"
+def _library_display(name, ltype):
+    """நூலகம் பெயர் + நூலக வகை (எ.கா. 'கி23. ராமராஜபுரம் கிளை நூலகம்')."""
+    return " ".join(x for x in ((name or "").strip(), (ltype or "").strip()) if x)
 
 
 def generate_inspection_intimation_pdf(rec: InspectionIntimation) -> bytes:
@@ -1205,7 +1217,7 @@ def generate_inspection_intimation_pdf(rec: InspectionIntimation) -> bytes:
         return TamilText(text, font, size, leading_pt=leading, align=align,
                          space_after=space_after, justify=justify, first_indent=indent)
 
-    lib = _library_display(rec.library_name)
+    lib = _library_display(rec.library_name, rec.library_type)
     insp_date = rec.inspection_date.strftime("%d.%m.%Y")
     letter_date = rec.letter_date.strftime("%d.%m.%Y")
     year = rec.survey_year
@@ -1225,7 +1237,7 @@ def generate_inspection_intimation_pdf(rec: InspectionIntimation) -> bytes:
     story.append(ref)
     story.append(Spacer(1, 24))
 
-    subject_w = doc.width * 0.62
+    subject_w = doc.width * 0.72
     label_w = 24 * mm
     subj = Table(
         [[
@@ -1237,13 +1249,11 @@ def generate_inspection_intimation_pdf(rec: InspectionIntimation) -> bytes:
         colWidths=[label_w, subject_w - label_w], hAlign="RIGHT",
     )
     subj.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
-        ("LINEAFTER", (0, 0), (0, 0), 0.8, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(subj)
     story.append(Spacer(1, 24))
@@ -1277,9 +1287,9 @@ def generate_inspection_intimation_pdf(rec: InspectionIntimation) -> bytes:
     ]))
     story.append(sign)
     story.append(Spacer(1, 14))
-    story.append(T(f"பெறுநர்:<br/>நூலகர்<br/>{lib}"))
-    story.append(Spacer(1, 24))
-    story.append(T(f"மாவட்ட நூலக அலுவலர்,<br/>{DISTRICT_NAME}."))
+    story.append(T(
+        f"பெறுநர்:<br/>நூலகர்<br/>{(rec.library_type or '').strip()}<br/>{(rec.library_name or '').strip()}"
+    ))
 
     doc.build(story)
     return buf.getvalue()
