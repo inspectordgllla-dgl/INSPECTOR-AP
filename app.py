@@ -1138,6 +1138,16 @@ def _clean(v):
     return "" if v.lower() == "nan" else v
 
 
+def _norm_header(h):
+    """தலைப்பின் இறுதியில் உள்ள , . : ; மற்றும் இடைவெளிகளை நீக்கி சிறிய எழுத்தாக்கும்."""
+    return re.sub(r"[\s,.:;]+$", "", re.sub(r"\s+", " ", str(h).strip())).lower()
+
+
+def _norm_name(n):
+    """பெயர் ஒப்பீட்டுக்கு: இடைவெளிகளை நீக்கி சிறிய எழுத்தாக்கும்."""
+    return re.sub(r"\s+", "", (n or "")).lower()
+
+
 def _clean_phone(v):
     v = _clean(v)
     return v[:-2] if v.endswith(".0") and v[:-2].isdigit() else v
@@ -1150,18 +1160,18 @@ def _parse_library_rows(file_storage):
     fname = (file_storage.filename or "").lower()
     if fname.endswith(".csv"):
         df = pd.read_csv(file_storage, dtype=str, keep_default_na=False)
-    elif fname.endswith(".xlsx") or fname.endswith(".xlsm"):
-        df = pd.read_excel(file_storage, dtype=str)
+    elif fname.endswith((".xlsx", ".xlsm", ".xls")):
+        df = pd.read_excel(file_storage, dtype=str)  # .xls-க்கு xlrd, .xlsx-க்கு openpyxl
     else:
-        raise ValueError(".xlsx அல்லது .csv கோப்பை மட்டும் தேர்ந்தெடுக்கவும் (பழைய .xls எனில் .xlsx ஆகச் சேமிக்கவும்).")
+        raise ValueError(".xls, .xlsx அல்லது .csv கோப்பை மட்டும் தேர்ந்தெடுக்கவும்.")
     df = df.fillna("")
     cols = [str(c).strip() for c in df.columns]
-    lowered = {c.lower(): i for i, c in enumerate(cols)}
+    lowered = {_norm_header(c): i for i, c in enumerate(cols)}
     mapping = {}
     for field, aliases in LIB_HEADER_ALIASES.items():
         for a in aliases:
-            if a.lower() in lowered:
-                mapping[field] = lowered[a.lower()]
+            if _norm_header(a) in lowered:
+                mapping[field] = lowered[_norm_header(a)]
                 break
     if "name" not in mapping:  # தலைப்பு இல்லை — முதல் வரியையும் தரவாக எடுத்து, இடம் வாரியாக
         raw = pd.DataFrame([cols] + df.values.tolist())
@@ -1177,14 +1187,21 @@ def _parse_library_rows(file_storage):
     return out
 
 
-def _find_library(name, ltype):
-    q = Library.query.filter(Library.name == name)
+def _build_library_index():
+    """இடைவெளி வேறுபாடுகளைப் பொருட்படுத்தாமல் பெயரால் தேட: {normalized name: [Library,...]}"""
+    idx = {}
+    for r in Library.query.all():
+        idx.setdefault(_norm_name(r.name), []).append(r)
+    return idx
+
+
+def _find_library(idx, name, ltype):
+    cands = idx.get(_norm_name(name), [])
     if ltype:
-        hit = q.filter(Library.library_type == ltype).first()
-        if hit:
-            return hit
-    matches = q.all()
-    return matches[0] if len(matches) == 1 and not ltype else None
+        for c in cands:
+            if _norm_name(c.library_type) == _norm_name(ltype):
+                return c
+    return cands[0] if len(cands) == 1 and (not ltype or not cands[0].library_type) else None
 
 
 @app.route("/libraries")
@@ -1270,10 +1287,10 @@ def libraries_import_sheet():
     if not libs:
         flash("Google Sheet-லிருந்து நூலகங்களைப் பெற இயலவில்லை.")
         return redirect(url_for("libraries_manage"))
-    existing = {((r.library_type or "").strip(), r.name.strip()) for r in Library.query.all()}
+    existing = {(_norm_name(r.library_type), _norm_name(r.name)) for r in Library.query.all()}
     added = 0
     for l in libs:
-        key = (l["type"], l["name"])
+        key = (_norm_name(l["type"]), _norm_name(l["name"]))
         if key in existing:
             continue
         db.session.add(Library(library_type=l["type"], name=l["name"]))
@@ -1298,16 +1315,18 @@ def libraries_import_file():
         flash(f"கோப்பைப் படிக்க இயலவில்லை: {exc}")
         return redirect(url_for("libraries_manage"))
     added = updated = 0
+    idx = _build_library_index()
     for r in rows:
-        rec = _find_library(r["name"], r.get("library_type", ""))
+        rec = _find_library(idx, r["name"], r.get("library_type", ""))
         if rec is None:
-            db.session.add(Library(
+            new_rec = Library(
                 library_type=r.get("library_type", ""), name=r["name"],
                 address=r.get("address", ""), librarian_name=r.get("librarian_name", ""),
                 phone=r.get("phone", ""),
-            ))
+            )
+            db.session.add(new_rec)
+            idx.setdefault(_norm_name(r["name"]), []).append(new_rec)
             added += 1
-            db.session.flush()
         else:
             changed = False
             for f in ("address", "librarian_name", "phone"):

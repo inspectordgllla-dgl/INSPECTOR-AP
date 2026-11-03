@@ -15,8 +15,8 @@
     <button type="submit">1. Google Sheet-லிருந்து வகை + பெயர் ஏற்று</button>
   </form>
   <form method="post" action="{{ url_for('libraries_import_file') }}" enctype="multipart/form-data">
-    <label for="file">2. Excel (.xlsx) / CSV — முகவரி, நூலகர், தொலைபேசி உட்பட</label>
-    <input type="file" id="file" name="file" accept=".xlsx,.xlsm,.csv" required>
+    <label for="file">2. Excel (.xls / .xlsx) / CSV — முகவரி, நூலகர், தொலைபேசி உட்பட</label>
+    <input type="file" id="file" name="file" accept=".xls,.xlsx,.xlsm,.csv" required>
     <button type="submit">கோப்பை ஏற்று</button>
   </form>
   <p style="color:#64748b;font-size:.85rem;">
