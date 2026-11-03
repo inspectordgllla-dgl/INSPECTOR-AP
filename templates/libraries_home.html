@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>நூலக முகவரி</h2>
+  {% if not libs %}
+    <p>நூலகப் பதிவுகள் இன்னும் ஏற்றப்படவில்லை. <a href="{{ url_for('libraries_manage') }}">நூலகங்கள் நிர்வாகம்</a> பக்கத்தில் Google Sheet அல்லது Excel-லிருந்து ஏற்றவும்.</p>
+  {% else %}
+  <label for="lib_type">நூலக வகை</label>
+  <select id="lib_type">
+    <option value="">-- தேர்ந்தெடுக்கவும் --</option>
+    {% for t in types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+  </select>
+
+  <label for="lib_name">நூலகம் பெயர்</label>
+  <select id="lib_name" disabled>
+    <option value="">-- முதலில் நூலக வகையைத் தேர்ந்தெடுக்கவும் --</option>
+  </select>
+  {% endif %}
+  <p style="margin-top:14px;"><a class="btn btn-secondary" href="{{ url_for('libraries_manage') }}">நூலகங்கள் நிர்வாகம் (சேர்க்க / திருத்த / ஏற்ற)</a></p>
+</div>
+
+<div id="lib_card" class="lib-card" style="display:none;">
+  <div class="lib-card-head">
+    <div class="lib-card-name" id="c_name"></div>
+    <div class="lib-card-type" id="c_type"></div>
+  </div>
+  <div class="lib-row"><span class="lib-label">முகவரி</span><span class="lib-val" id="c_address"></span></div>
+  <div class="lib-row"><span class="lib-label">நூலகர் பெயர்</span><span class="lib-val" id="c_librarian"></span></div>
+  <div class="lib-row"><span class="lib-label">தொலைபேசி எண்</span><span class="lib-val" id="c_phone"></span></div>
+  <a class="btn" id="c_edit" href="#">திருத்து</a>
+</div>
+
+<style>
+  .lib-card { background:#fff; border-radius:12px; padding:18px; margin-top:14px; box-shadow:0 2px 10px rgba(0,0,0,.08); border-left:6px solid #0d9488; }
+  .lib-card-head { margin-bottom:12px; }
+  .lib-card-name { font-size:1.2rem; font-weight:700; color:#0f172a; }
+  .lib-card-type { display:inline-block; margin-top:6px; background:#ccfbf1; color:#115e59; border-radius:999px; padding:2px 12px; font-size:.85rem; }
+  .lib-row { display:flex; gap:10px; padding:8px 0; border-top:1px solid #e2e8f0; }
+  .lib-label { flex:0 0 120px; color:#64748b; font-size:.9rem; }
+  .lib-val { flex:1; white-space:pre-line; word-break:break-word; }
+  .lib-val a { color:#2563eb; text-decoration:none; font-weight:600; }
+</style>
+
+<script>
+(function () {
+  var libs = {{ libs | tojson }};
+  var typeSel = document.getElementById('lib_type');
+  var nameSel = document.getElementById('lib_name');
+  var card = document.getElementById('lib_card');
+  if (!typeSel) return;
+  var editBase = "{{ url_for('library_edit', lib_id=0) }}".replace(/0\/edit$/, '');
+
+  function dash(v) { return v && v.trim() ? v : '—'; }
+
+  function fillNames() {
+    card.style.display = 'none';
+    var t = typeSel.value;
+    nameSel.innerHTML = '';
+    if (!t) {
+      nameSel.disabled = true;
+      nameSel.innerHTML = '<option value="">-- முதலில் நூலக வகையைத் தேர்ந்தெடுக்கவும் --</option>';
+      return;
+    }
+    var first = document.createElement('option');
+    first.value = ''; first.textContent = '-- தேர்ந்தெடுக்கவும் --';
+    nameSel.appendChild(first);
+    libs.forEach(function (l) {
+      if (l.type !== t) return;
+      var o = document.createElement('option');
+      o.value = l.id; o.textContent = l.name;
+      nameSel.appendChild(o);
+    });
+    nameSel.disabled = false;
+  }
+
+  function showCard() {
+    var id = parseInt(nameSel.value, 10);
+    var l = libs.filter(function (x) { return x.id === id; })[0];
+    if (!l) { card.style.display = 'none'; return; }
+    document.getElementById('c_name').textContent = l.name;
+    document.getElementById('c_type').textContent = l.type || '—';
+    document.getElementById('c_address').textContent = dash(l.address);
+    document.getElementById('c_librarian').textContent = dash(l.librarian);
+    var ph = document.getElementById('c_phone');
+    ph.textContent = '';
+    if (l.phone && l.phone.trim()) {
+      var a = document.createElement('a');
+      a.href = 'tel:' + l.phone.replace(/[^0-9+]/g, '');
+      a.textContent = l.phone;
+      ph.appendChild(a);
+    } else { ph.textContent = '—'; }
+    document.getElementById('c_edit').href = editBase + l.id + '/edit';
+    card.style.display = 'block';
+  }
+
+  typeSel.addEventListener('change', fillNames);
+  nameSel.addEventListener('change', showCard);
+})();
+</script>
+{% endblock %}

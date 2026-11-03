@@ -50,6 +50,8 @@ elif db_url.startswith("postgresql://"):
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+# Neon idle ஆனபின் connection துண்டிக்கப்படலாம்; ஒவ்வொரு முறையும் முதலில் சோதிக்கும்.
+app.config.setdefault("SQLALCHEMY_ENGINE_OPTIONS", {"pool_pre_ping": True, "pool_recycle": 280})
 db = SQLAlchemy(app)
 
 
@@ -159,6 +161,17 @@ class InspectionIntimation(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class Library(db.Model):
+    """நூலகங்கள் — வகை, பெயர், முகவரி, நூலகர், தொலைபேசி (Neon DB-ல் சேமிப்பு)."""
+    __tablename__ = "libraries"
+    id = db.Column(db.Integer, primary_key=True)
+    library_type = db.Column(db.String(100))
+    name = db.Column(db.String(255), nullable=False)
+    address = db.Column(db.Text)
+    librarian_name = db.Column(db.String(255))
+    phone = db.Column(db.String(100))
+
+
 with app.app_context():
     db.create_all()
 
@@ -184,7 +197,7 @@ LEAVE_TYPES = [
     "மருத்துவ விடுப்பு",
 ]
 
-SURVEY_YEARS = ["2024-2025", "2025-2026", "2026-2027", "2027-2028"]
+SURVEY_YEARS = ["2024-2025", "2025-2026", "2027-2028"]
 
 # சனி (5) / ஞாயிறு (6) நாட்களில் "அலுவலகப் பணி" விருப்பம் காட்டப்படாது.
 OFFICE_WORK_EXCLUDED_WEEKDAYS = (5, 6)
@@ -224,6 +237,18 @@ def sheet_csv_url(sheet_name: str) -> str:
 
 
 def get_libraries():
+    """நூலகப் பட்டியல்: DB-ல் பதிவுகள் இருந்தால் அதுவே; இல்லையெனில் Google Sheet."""
+    try:
+        rows = Library.query.order_by(Library.id).all()
+        if rows:
+            return [{"type": (r.library_type or "").strip(), "name": r.name} for r in rows]
+    except Exception as exc:  # noqa: BLE001
+        db.session.rollback()
+        print("Library DB read error:", exc)
+    return _get_libraries_from_sheet()
+
+
+def _get_libraries_from_sheet():
     """Sheet1: A column = நூலக வகை, B column = நூலகம் பெயர் (A2:B175)."""
     try:
         df = pd.read_csv(sheet_csv_url(LIBRARY_SHEET_NAME))
@@ -1093,6 +1118,210 @@ def _intimation_pdf_response(rec):
             )
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# ROUTES — 4. நூலக முகவரி (Neon DB) — பார்வை, திருத்தம், ஏற்றுமதி
+# ---------------------------------------------------------------------------
+LIB_HEADER_ALIASES = {
+    "library_type": ["நூலக வகை", "வகை", "type", "library type"],
+    "name": ["நூலகம் பெயர்", "நூலகம்", "பெயர்", "name", "library", "library name"],
+    "address": ["முகவரி", "address"],
+    "librarian_name": ["நூலகர் பெயர்", "நூலகர்", "librarian", "librarian name"],
+    "phone": ["தொலைபேசி எண்", "தொலைபேசி எண்.", "தொலைபேசி", "கைபேசி", "phone", "mobile", "phone number"],
+}
+LIB_FIELDS = ["library_type", "name", "address", "librarian_name", "phone"]
+
+
+def _clean(v):
+    v = "" if v is None else str(v).strip()
+    return "" if v.lower() == "nan" else v
+
+
+def _clean_phone(v):
+    v = _clean(v)
+    return v[:-2] if v.endswith(".0") and v[:-2].isdigit() else v
+
+
+def _parse_library_rows(file_storage):
+    """Excel (.xlsx) / CSV கோப்பை [{library_type,name,address,librarian_name,phone}] ஆக மாற்றும்.
+    தலைப்பு வரிசையில் பெயர்கள் அடையாளம் காணப்பட்டால் அவற்றைப் பயன்படுத்தும்;
+    இல்லையெனில் நெடுவரிசை வரிசை: வகை, பெயர், முகவரி, நூலகர், தொலைபேசி."""
+    fname = (file_storage.filename or "").lower()
+    if fname.endswith(".csv"):
+        df = pd.read_csv(file_storage, dtype=str, keep_default_na=False)
+    elif fname.endswith(".xlsx") or fname.endswith(".xlsm"):
+        df = pd.read_excel(file_storage, dtype=str)
+    else:
+        raise ValueError(".xlsx அல்லது .csv கோப்பை மட்டும் தேர்ந்தெடுக்கவும் (பழைய .xls எனில் .xlsx ஆகச் சேமிக்கவும்).")
+    df = df.fillna("")
+    cols = [str(c).strip() for c in df.columns]
+    lowered = {c.lower(): i for i, c in enumerate(cols)}
+    mapping = {}
+    for field, aliases in LIB_HEADER_ALIASES.items():
+        for a in aliases:
+            if a.lower() in lowered:
+                mapping[field] = lowered[a.lower()]
+                break
+    if "name" not in mapping:  # தலைப்பு இல்லை — முதல் வரியையும் தரவாக எடுத்து, இடம் வாரியாக
+        raw = pd.DataFrame([cols] + df.values.tolist())
+        mapping = {f: i for i, f in enumerate(LIB_FIELDS) if i < raw.shape[1]}
+        rows_src = raw.values.tolist()
+    else:
+        rows_src = df.values.tolist()
+    out = []
+    for r in rows_src:
+        rec = {f: (_clean_phone(r[i]) if f == "phone" else _clean(r[i])) for f, i in mapping.items()}
+        if rec.get("name"):
+            out.append(rec)
+    return out
+
+
+def _find_library(name, ltype):
+    q = Library.query.filter(Library.name == name)
+    if ltype:
+        hit = q.filter(Library.library_type == ltype).first()
+        if hit:
+            return hit
+    matches = q.all()
+    return matches[0] if len(matches) == 1 and not ltype else None
+
+
+@app.route("/libraries")
+def libraries_home():
+    rows = Library.query.order_by(Library.id).all()
+    libs = [
+        {"id": r.id, "type": (r.library_type or "").strip(), "name": r.name,
+         "address": r.address or "", "librarian": r.librarian_name or "", "phone": r.phone or ""}
+        for r in rows
+    ]
+    types = []
+    for l in libs:
+        if l["type"] and l["type"] not in types:
+            types.append(l["type"])
+    return render_template("libraries_home.html", libs=libs, types=types)
+
+
+@app.route("/libraries/manage")
+def libraries_manage():
+    rows = Library.query.order_by(Library.id).all()
+    types = []
+    for r in rows:
+        t = (r.library_type or "").strip()
+        if t and t not in types:
+            types.append(t)
+    return render_template("libraries_manage.html", rows=rows, types=types)
+
+
+def _library_form(rec):
+    """புதிய பதிவு (rec=None) அல்லது திருத்தம்."""
+    if request.method == "POST":
+        f = request.form
+        name = _clean(f.get("name"))
+        if not name:
+            flash("நூலகம் பெயர் அவசியம்.")
+            return redirect(request.url)
+        is_new = rec is None
+        if is_new:
+            rec = Library()
+            db.session.add(rec)
+        rec.library_type = _clean(f.get("library_type"))
+        rec.name = name
+        rec.address = (f.get("address") or "").strip()
+        rec.librarian_name = _clean(f.get("librarian_name"))
+        rec.phone = _clean(f.get("phone"))
+        db.session.commit()
+        flash("புதிய நூலகம் சேர்க்கப்பட்டது." if is_new else "மாற்றங்கள் சேமிக்கப்பட்டன.")
+        return redirect(url_for("libraries_manage"))
+    types = [t for (t,) in db.session.query(Library.library_type).distinct().all() if t]
+    return render_template("library_edit.html", rec=rec, types=types)
+
+
+@app.route("/libraries/new", methods=["GET", "POST"])
+def library_new():
+    return _library_form(None)
+
+
+@app.route("/libraries/<int:lib_id>/edit", methods=["GET", "POST"])
+def library_edit(lib_id):
+    rec = db.session.get(Library, lib_id)
+    if rec is None:
+        abort(404)
+    return _library_form(rec)
+
+
+@app.route("/libraries/<int:lib_id>/delete", methods=["POST"])
+def library_delete(lib_id):
+    if (request.form.get("password") or "") != DELETE_PASSWORD:
+        flash("கடவுச்சொல் தவறு — எதுவும் அழிக்கப்படவில்லை.")
+        return redirect(url_for("libraries_manage"))
+    rec = db.session.get(Library, lib_id)
+    if rec is not None:
+        db.session.delete(rec)
+        db.session.commit()
+        flash("நூலகப் பதிவு அழிக்கப்பட்டது.")
+    return redirect(url_for("libraries_manage"))
+
+
+@app.route("/libraries/import-sheet", methods=["POST"])
+def libraries_import_sheet():
+    """Google Sheet-ல் உள்ள வகை + பெயரை DB-ல் சேர்க்கும் (ஏற்கனவே உள்ளவை தவிர்க்கப்படும்)."""
+    libs = _get_libraries_from_sheet()
+    if not libs:
+        flash("Google Sheet-லிருந்து நூலகங்களைப் பெற இயலவில்லை.")
+        return redirect(url_for("libraries_manage"))
+    existing = {((r.library_type or "").strip(), r.name.strip()) for r in Library.query.all()}
+    added = 0
+    for l in libs:
+        key = (l["type"], l["name"])
+        if key in existing:
+            continue
+        db.session.add(Library(library_type=l["type"], name=l["name"]))
+        existing.add(key)
+        added += 1
+    db.session.commit()
+    flash(f"Google Sheet-லிருந்து {added} புதிய நூலகங்கள் சேர்க்கப்பட்டன; {len(libs) - added} ஏற்கனவே இருந்தன.")
+    return redirect(url_for("libraries_manage"))
+
+
+@app.route("/libraries/import-file", methods=["POST"])
+def libraries_import_file():
+    """Excel/CSV: பெயர் பொருந்தினால் முகவரி, நூலகர், தொலைபேசியை புதுப்பிக்கும்; இல்லையெனில் புதிதாகச் சேர்க்கும்.
+    கோப்பில் காலியாக உள்ள கலங்கள் ஏற்கனவே உள்ள தகவலை அழிக்காது."""
+    file = request.files.get("file")
+    if not file or not file.filename:
+        flash("கோப்பைத் தேர்ந்தெடுக்கவும்.")
+        return redirect(url_for("libraries_manage"))
+    try:
+        rows = _parse_library_rows(file)
+    except Exception as exc:  # noqa: BLE001
+        flash(f"கோப்பைப் படிக்க இயலவில்லை: {exc}")
+        return redirect(url_for("libraries_manage"))
+    added = updated = 0
+    for r in rows:
+        rec = _find_library(r["name"], r.get("library_type", ""))
+        if rec is None:
+            db.session.add(Library(
+                library_type=r.get("library_type", ""), name=r["name"],
+                address=r.get("address", ""), librarian_name=r.get("librarian_name", ""),
+                phone=r.get("phone", ""),
+            ))
+            added += 1
+            db.session.flush()
+        else:
+            changed = False
+            for f in ("address", "librarian_name", "phone"):
+                v = r.get(f, "")
+                if v and v != (getattr(rec, f) or ""):
+                    setattr(rec, f, v)
+                    changed = True
+            if r.get("library_type") and not rec.library_type:
+                rec.library_type = r["library_type"]
+                changed = True
+            updated += int(changed)
+    db.session.commit()
+    flash(f"கோப்பிலிருந்து {len(rows)} வரிசைகள் படிக்கப்பட்டன — புதிதாக {added}, புதுப்பிக்கப்பட்டவை {updated}.")
+    return redirect(url_for("libraries_manage"))
 
 
 # ---------------------------------------------------------------------------

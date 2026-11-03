@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>{{ 'நூலகத் தகவலைத் திருத்து' if rec else 'புதிய நூலகம் சேர்' }}</h2>
+  <form method="post">
+    <label for="library_type">நூலக வகை</label>
+    <input type="text" id="library_type" name="library_type" list="type_list"
+           value="{{ rec.library_type or '' if rec else '' }}" placeholder="எ.கா. கிளை நூலகம்">
+    <datalist id="type_list">
+      {% for t in types %}<option value="{{ t }}">{% endfor %}
+    </datalist>
+
+    <label for="name">நூலகம் பெயர்</label>
+    <input type="text" id="name" name="name" value="{{ rec.name if rec else '' }}" required>
+
+    <label for="address">முகவரி</label>
+    <textarea id="address" name="address" rows="4" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-family:inherit;font-size:1rem;box-sizing:border-box;">{{ rec.address or '' if rec else '' }}</textarea>
+
+    <label for="librarian_name">நூலகர் பெயர்</label>
+    <input type="text" id="librarian_name" name="librarian_name" value="{{ rec.librarian_name or '' if rec else '' }}">
+
+    <label for="phone">தொலைபேசி எண்</label>
+    <input type="text" id="phone" name="phone" inputmode="tel" value="{{ rec.phone or '' if rec else '' }}">
+
+    <button type="submit">சேமி</button>
+    <a class="btn btn-secondary" href="{{ url_for('libraries_manage') }}">ரத்து</a>
+  </form>
+  {% if rec %}<p style="color:#64748b;font-size:.85rem;">குறிப்பு: பெயரை மாற்றினால், ஏற்கனவே உருவாக்கிய பயணத் திட்டங்களில் பழைய பெயரே இருக்கும்.</p>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>நூலகங்கள் நிர்வாகம்</h2>
+  <p>
+    <a class="btn" href="{{ url_for('library_new') }}">+ புதிய நூலகம்</a>
+    <a class="btn btn-secondary" href="{{ url_for('libraries_home') }}">நூலக முகவரி (card)</a>
+  </p>
+</div>
+
+<div class="card">
+  <h3>தரவை ஏற்றுதல்</h3>
+  <form method="post" action="{{ url_for('libraries_import_sheet') }}" style="margin-bottom:14px;"
+        onsubmit="return confirm('Google Sheet-ல் உள்ள நூலக வகை, பெயர்களை DB-ல் சேர்க்கவா? (ஏற்கனவே உள்ளவை தவிர்க்கப்படும்)');">
+    <button type="submit">1. Google Sheet-லிருந்து வகை + பெயர் ஏற்று</button>
+  </form>
+  <form method="post" action="{{ url_for('libraries_import_file') }}" enctype="multipart/form-data">
+    <label for="file">2. Excel (.xlsx) / CSV — முகவரி, நூலகர், தொலைபேசி உட்பட</label>
+    <input type="file" id="file" name="file" accept=".xlsx,.xlsm,.csv" required>
+    <button type="submit">கோப்பை ஏற்று</button>
+  </form>
+  <p style="color:#64748b;font-size:.85rem;">
+    நெடுவரிசைத் தலைப்புகள்: <b>நூலக வகை, நூலகம் பெயர், முகவரி, நூலகர் பெயர், தொலைபேசி எண்</b>.
+    நூலகம் பெயர் பொருந்தும் வரிசையில் மட்டும் முகவரி, நூலகர், தொலைபேசி புதுப்பிக்கப்படும்; பொருந்தாதவை புதிதாகச் சேர்க்கப்படும்.
+    கோப்பில் காலியாக உள்ள கலங்கள் ஏற்கனவே உள்ள தகவலை அழிக்காது.
+  </p>
+</div>
+
+<div class="card">
+  <h3>நூலகப் பட்டியல் ({{ rows|length }})</h3>
+  <label for="f_type">வகை வடிகட்டி</label>
+  <select id="f_type">
+    <option value="">அனைத்தும்</option>
+    {% for t in types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+  </select>
+  <label for="f_text">தேடு</label>
+  <input type="text" id="f_text" placeholder="பெயர் / நூலகர் / தொலைபேசி">
+
+  <div style="overflow-x:auto;">
+  <table id="lib_table">
+    <tr><th>#</th><th>வகை</th><th>நூலகம் பெயர்</th><th>முகவரி</th><th>நூலகர்</th><th>தொலைபேசி</th><th></th></tr>
+    {% for r in rows %}
+    <tr data-type="{{ r.library_type or '' }}" data-text="{{ (r.name ~ ' ' ~ (r.librarian_name or '') ~ ' ' ~ (r.phone or '') ~ ' ' ~ (r.address or ''))|lower }}">
+      <td>{{ loop.index }}</td>
+      <td>{{ r.library_type or '' }}</td>
+      <td>{{ r.name }}</td>
+      <td style="white-space:pre-line;">{{ r.address or '' }}</td>
+      <td>{{ r.librarian_name or '' }}</td>
+      <td>{{ r.phone or '' }}</td>
+      <td style="white-space:nowrap;">
+        <a class="btn btn-secondary" style="margin-top:0;" href="{{ url_for('library_edit', lib_id=r.id) }}">திருத்து</a>
+        <button type="button" class="btn btn-danger" style="margin-top:0;" onclick="toggleDeleteForm('del-{{ r.id }}')">அழி</button>
+        <form id="del-{{ r.id }}" method="post" action="{{ url_for('library_delete', lib_id=r.id) }}" class="delete-form" style="display:none;">
+          <input type="password" name="password" placeholder="கடவுச்சொல்" required>
+          <button type="submit" class="btn btn-danger">உறுதி</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+<script>
+function toggleDeleteForm(id) {
+  var f = document.getElementById(id);
+  if (!f) return;
+  if (f.style.display === 'none') {
+    if (!confirm('இந்த நூலகப் பதிவு நிரந்தரமாக அழிக்கப்படும். தொடரவா?')) return;
+    f.style.display = 'flex';
+  } else { f.style.display = 'none'; }
+}
+(function () {
+  var t = document.getElementById('f_type'), q = document.getElementById('f_text');
+  var rows = document.querySelectorAll('#lib_table tr[data-type]');
+  function apply() {
+    var tv = t.value, qv = q.value.trim().toLowerCase();
+    rows.forEach(function (r) {
+      var ok = (!tv || r.dataset.type === tv) && (!qv || r.dataset.text.indexOf(qv) !== -1);
+      r.style.display = ok ? '' : 'none';
+    });
+  }
+  t.addEventListener('change', apply); q.addEventListener('input', apply);
+})();
+</script>
+{% endblock %}
