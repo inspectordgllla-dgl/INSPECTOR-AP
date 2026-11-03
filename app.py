@@ -40,8 +40,12 @@ DISTRICT_NAME = os.environ.get("DISTRICT_NAME", "திண்டுக்கல�
 # ---------------------------------------------------------------------------
 db_url = os.environ.get("DATABASE_URL", "sqlite:///tour_planner.db")
 # Render வழங்கும் URL "postgres://" என தொடங்கும்; SQLAlchemy 1.4+ க்கு "postgresql://" தேவை.
+# SQLAlchemy 2.1+ "postgresql://" என்றால் psycopg3 ஐ தேடும்; நாம் psycopg2 பயன்படுத்துவதால்
+# driver-ஐ வெளிப்படையாகக் குறிப்பிடுகிறோம்.
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+elif db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -179,7 +183,7 @@ LEAVE_TYPES = [
     "மருத்துவ விடுப்பு",
 ]
 
-SURVEY_YEARS = ["2024-2025", "2025-2026", "2026-2027", "2027-2028"]
+SURVEY_YEARS = ["2024-2025", "2025-2026", "2027-2028"]
 
 # சனி (5) / ஞாயிறு (6) நாட்களில் "அலுவலகப் பணி" விருப்பம் காட்டப்படாது.
 OFFICE_WORK_EXCLUDED_WEEKDAYS = (5, 6)
@@ -1257,7 +1261,7 @@ def generate_inspection_intimation_pdf(rec: InspectionIntimation) -> bytes:
         "செல்லக்கூடாது எனவும் சம்பந்தப்பட்ட நூலகருக்கு அறிவுறுத்தப்படுகிறது.",
         justify=True, indent=indent, space_after=8))
     story.append(T(
-        "ஆய்வு நடைபெறவிருக்கும் நூலகத்தில் தினக்கூலிப் நூலகப் பணியாளர் அனுமதிக்கப் "
+        "ஆய்வு நடைபெறவிருக்கும் நூலகத்தில் தினக்கூலி நூலகப் பணியாளர் அனுமதிக்கப் "
         "பட்டிருப்பின் அவரும் தினக்கூலிக் கூட்டுநரும் நூலகத்தில் இருக்க வேண்டும்.",
         justify=True, indent=indent))
     story.append(Spacer(1, 44))
