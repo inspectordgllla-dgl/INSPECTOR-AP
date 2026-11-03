@@ -141,6 +141,19 @@ class ActualTourPlanDay(db.Model):
         return " ".join(parts)
 
 
+class InspectionIntimation(db.Model):
+    """ஆய்வு தகவல் நூலகருக்கு அனுப்புதல் — ஒவ்வொரு அறிவிப்பு கடிதப் பதிவு."""
+    __tablename__ = "inspection_intimations"
+    id = db.Column(db.Integer, primary_key=True)
+    file_number = db.Column(db.String(100), nullable=False)      # ந.க.எண்.
+    letter_date = db.Column(db.Date, nullable=False)             # நாள்
+    library_type = db.Column(db.String(100))                     # நூலக வகை
+    library_name = db.Column(db.String(255), nullable=False)     # நூலகம் பெயர்
+    survey_year = db.Column(db.String(20), nullable=False)       # ஆய்வு ஆண்டு
+    inspection_date = db.Column(db.Date, nullable=False)         # ஆய்வு நடைபெறவுள்ள நாள்
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 with app.app_context():
     db.create_all()
 
@@ -166,7 +179,7 @@ LEAVE_TYPES = [
     "மருத்துவ விடுப்பு",
 ]
 
-SURVEY_YEARS = ["2024-2025", "2025-2026", "2027-2028"]
+SURVEY_YEARS = ["2024-2025", "2025-2026", "2026-2027", "2027-2028"]
 
 # சனி (5) / ஞாயிறு (6) நாட்களில் "அலுவலகப் பணி" விருப்பம் காட்டப்படாது.
 OFFICE_WORK_EXCLUDED_WEEKDAYS = (5, 6)
@@ -974,14 +987,83 @@ def delete_month(year, month):
 
 
 # ---------------------------------------------------------------------------
-# ROUTES — 3. Placeholder பிரிவு (பின்னர் விரிவாக்கம் செய்யலாம்)
+# ROUTES — 3. ஆய்வு / பார்வை அறிக்கைகள்
 # ---------------------------------------------------------------------------
+DEFAULT_LIBRARY_TYPES = [
+    "மைய நூலகம்", "முழு நேர கிளை நூலகம்", "கிளை நூலகம்", "ஊர்ப்புற நூலகம்",
+]
+
+
 @app.route("/reports")
 def reports_placeholder():
+    return render_template("reports_home.html")
+
+
+def _library_types(libraries):
+    """Google Sheet-ல் உள்ள நூலக வகைகள் (வரிசை மாறாமல்). Sheet கிடைக்கவில்லை
+    எனில் இயல்பு நான்கு வகைகள்."""
+    seen = []
+    for lib in libraries:
+        t = lib["type"]
+        if t and t not in seen:
+            seen.append(t)
+    return seen or DEFAULT_LIBRARY_TYPES
+
+
+@app.route("/reports/intimation", methods=["GET"])
+def intimation_form():
+    libraries = get_libraries()
+    if not libraries:
+        flash("Google Sheet-லிருந்து நூலகங்கள் பட்டியலைப் பெற இயலவில்லை. Sheet பகிர்வு அமைப்பைச் சரிபார்க்கவும்.")
+    records = (
+        InspectionIntimation.query.order_by(InspectionIntimation.id.desc()).limit(20).all()
+    )
     return render_template(
-        "placeholder.html",
-        title="ஆய்வு / பார்வை அறிக்கைகள்",
-        message="இந்தப் பகுதி விரைவில் சேர்க்கப்படும்.",
+        "intimation_form.html",
+        libraries=libraries,
+        library_types=_library_types(libraries),
+        survey_years=SURVEY_YEARS,
+        records=records,
+    )
+
+
+@app.route("/reports/intimation", methods=["POST"])
+def intimation_generate():
+    f = request.form
+    file_number = (f.get("file_number") or "").strip()
+    library_type = (f.get("library_type") or "").strip()
+    library_name = (f.get("library_name") or "").strip()
+    survey_year = (f.get("survey_year") or "").strip()
+    letter_date = _parse_date(f.get("letter_date"))
+    inspection_date = _parse_date(f.get("inspection_date"))
+
+    if not (file_number and library_type and library_name and survey_year
+            and letter_date and inspection_date):
+        flash("அனைத்து விவரங்களையும் பூர்த்தி செய்யவும்.")
+        return redirect(url_for("intimation_form"))
+
+    rec = InspectionIntimation(
+        file_number=file_number, letter_date=letter_date, library_type=library_type,
+        library_name=library_name, survey_year=survey_year, inspection_date=inspection_date,
+    )
+    db.session.add(rec)
+    db.session.commit()
+    return _intimation_pdf_response(rec)
+
+
+@app.route("/reports/intimation/<int:rec_id>/pdf", methods=["GET"])
+def intimation_pdf(rec_id):
+    rec = db.session.get(InspectionIntimation, rec_id)
+    if rec is None:
+        abort(404)
+    return _intimation_pdf_response(rec)
+
+
+def _intimation_pdf_response(rec):
+    return Response(
+        generate_inspection_intimation_pdf(rec),
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=inspection-intimation-{rec.id}.pdf"},
     )
 
 
@@ -1091,6 +1173,109 @@ def generate_permission_letter_pdf(plan: TourPlan) -> bytes:
         f"பெறுநர் – {LETTER_SENDER_DESIGNATION}, {LETTER_SENDER_OFFICE_LINE1} {LETTER_SENDER_OFFICE_LINE2}",
         size=9, leading=12,
     ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def _library_display(name):
+    """'நூலகம்' என்ற சொல் பெயரில் இல்லையெனில் இணைக்கும்."""
+    name = (name or "").strip()
+    return name if "நூலகம்" in name else f"{name} நூலகம்"
+
+
+def generate_inspection_intimation_pdf(rec: InspectionIntimation) -> bytes:
+    """ஆய்வு தகவல் நூலகருக்கு அனுப்புதல் — A4 portrait கடிதம்."""
+    import io
+    from reportlab.lib.pagesizes import A4
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=portrait(A4),
+        topMargin=22 * mm, bottomMargin=18 * mm,
+        leftMargin=22 * mm, rightMargin=22 * mm,
+    )
+
+    def T(text, font=FONT_REGULAR, size=12, leading=19, align="left",
+          space_after=0, justify=False, indent=0):
+        return TamilText(text, font, size, leading_pt=leading, align=align,
+                         space_after=space_after, justify=justify, first_indent=indent)
+
+    lib = _library_display(rec.library_name)
+    insp_date = rec.inspection_date.strftime("%d.%m.%Y")
+    letter_date = rec.letter_date.strftime("%d.%m.%Y")
+    year = rec.survey_year
+
+    story = [T(f"{DISTRICT_NAME} மாவட்ட நூலக அலுவலரின் செயல்முறைகள்",
+               font=FONT_BOLD, size=13, leading=18, align="center", space_after=18)]
+
+    ref = Table(
+        [[T(f"ந.க.எண்.{rec.file_number}"), T(f"நாள்.:- {letter_date}", align="right")]],
+        colWidths=[doc.width * 0.6, doc.width * 0.4],
+    )
+    ref.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(ref)
+    story.append(Spacer(1, 24))
+
+    subject_w = doc.width * 0.62
+    label_w = 24 * mm
+    subj = Table(
+        [[
+            T("பொருள்:", size=11, leading=17),
+            T(f"ஆய்வு- நூலகங்கள் ஆண்டாய்வு- {lib}- {year} ஆண்டுக்கான - "
+              f"ஆய்வு- {insp_date} நாளன்று நடைபெறுதல்- அறிவிப்பு- தொடர்பாக",
+              size=11, leading=17),
+        ]],
+        colWidths=[label_w, subject_w - label_w], hAlign="RIGHT",
+    )
+    subj.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, colors.black),
+        ("LINEAFTER", (0, 0), (0, 0), 0.8, colors.black),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(subj)
+    story.append(Spacer(1, 24))
+
+    indent = 38
+    story.append(T(
+        f"எதிர்வரும் {insp_date} அன்று {lib} நூலக ஆய்வாளரால் {year} ஆம் "
+        f"ஆண்டுக்கான ஆய்வு மேற்கொள்ளப்படவிருக்கிறது.",
+        justify=True, indent=indent, space_after=8))
+    story.append(T(
+        "ஆய்வு நாளன்று சம்பந்தப்பட்ட நூலகர், அனைத்து பதிவேடுகள், புள்ளி விவரங்கள் வரவு "
+        "செலவு கணக்குகளை தயார் நிலையில் வைத்திருக்க வேண்டும். பழைய பத்திரிகை விற்பனை "
+        "அறிக்கை மற்றும் வழங்கப்பட்ட பத்திரிக்கைகளின் பட்டியல் ஆகியவற்றின் படிகள் தயார் "
+        "செய்து வைத்திருக்க வேண்டும். ஆய்வு நடைபெறும் நாளில் எக்காரணம் கொண்டும் விடுப்பில் "
+        "செல்லக்கூடாது எனவும் சம்பந்தப்பட்ட நூலகருக்கு அறிவுறுத்தப்படுகிறது.",
+        justify=True, indent=indent, space_after=8))
+    story.append(T(
+        "ஆய்வு நடைபெறவிருக்கும் நூலகத்தில் தினக்கூலிப் நூலகப் பணியாளர் அனுமதிக்கப் "
+        "பட்டிருப்பின் அவரும் தினக்கூலிக் கூட்டுநரும் நூலகத்தில் இருக்க வேண்டும்.",
+        justify=True, indent=indent))
+    story.append(Spacer(1, 44))
+
+    sign = Table(
+        [["", T(f"மாவட்ட நூலக அலுவலர்,<br/>{DISTRICT_NAME}", align="center")]],
+        colWidths=[doc.width * 0.55, doc.width * 0.45],
+    )
+    sign.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(sign)
+    story.append(Spacer(1, 14))
+    story.append(T(f"பெறுநர்:<br/>நூலகர்<br/>{lib}"))
+    story.append(Spacer(1, 24))
+    story.append(T(f"மாவட்ட நூலக அலுவலர்,<br/>{DISTRICT_NAME}."))
 
     doc.build(story)
     return buf.getvalue()

@@ -205,10 +205,14 @@ class TamilText(Flowable):
 
     `text` may contain literal '<br/>' to force a line break (same convention
     the old Paragraph-based code used).
+
+    Optional: `justify=True` spreads words so every line except the last of a
+    paragraph fills the full width; `first_indent` indents the first line.
     """
 
     def __init__(self, text, font_path, font_size_pt, leading_pt=None,
-                 align="left", space_after=0, dpi=200):
+                 align="left", space_after=0, dpi=200, justify=False,
+                 first_indent=0):
         Flowable.__init__(self)
         self.raw_text = text or ""
         self.font_path = font_path
@@ -217,33 +221,56 @@ class TamilText(Flowable):
         self.align = align
         self.space_after = space_after
         self.dpi = dpi
-        self._lines = [""]
+        self.justify = justify
+        self.first_indent = first_indent
+        self._lines = [("", 0, True)]  # (text, indent_pt, is_last_in_paragraph)
         self._width = 0
         self._height = self.leading_pt + self.space_after
 
     def wrap(self, availWidth, availHeight):
-        forced_lines = self.raw_text.split("<br/>")
         all_lines = []
-        for fl in forced_lines:
-            all_lines.extend(wrap_words(fl, self.font_path, self.font_size_pt, availWidth))
-        self._lines = all_lines or [""]
+        for fl in self.raw_text.split("<br/>"):
+            indent = self.first_indent if not all_lines else 0
+            lines = wrap_words(fl, self.font_path, self.font_size_pt, availWidth - indent)
+            if indent and len(lines) > 1:
+                first = lines[0]
+                rest = fl[len(first):].lstrip(" ")
+                lines = [first] + wrap_words(rest, self.font_path, self.font_size_pt, availWidth)
+            for i, ln in enumerate(lines):
+                all_lines.append((ln, indent if i == 0 else 0, i == len(lines) - 1))
+        self._lines = all_lines or [("", 0, True)]
         self._width = availWidth
         self._height = self.leading_pt * len(self._lines) + self.space_after
         return self._width, self._height
 
+    def _draw_line(self, c, line, x0, y, avail, last):
+        words = [w for w in line.split(" ") if w]
+        if self.justify and not last and len(words) > 1:
+            rendered = [rasterize_line(w, self.font_path, self.font_size_pt, dpi=self.dpi) for w in words]
+            rendered = [r for r in rendered if r]
+            total = sum(r[1] for r in rendered)
+            if len(rendered) > 1 and total < avail:
+                gap = (avail - total) / (len(rendered) - 1)
+                x = x0
+                for img, w_pt, h_pt in rendered:
+                    c.drawImage(ImageReader(img), x, y, width=w_pt, height=h_pt)
+                    x += w_pt + gap
+                return
+        result = rasterize_line(line, self.font_path, self.font_size_pt, dpi=self.dpi)
+        if result:
+            img, w_pt, h_pt = result
+            if self.align == "right":
+                x = self._width - w_pt
+            elif self.align == "center":
+                x = x0 + (avail - w_pt) / 2.0
+            else:
+                x = x0
+            c.drawImage(ImageReader(img), x, y, width=w_pt, height=h_pt)
+
     def draw(self):
         c = self.canv
         y = self._height - self.space_after
-        for line in self._lines:
+        for line, indent, last in self._lines:
             y -= self.leading_pt
             if line.strip():
-                result = rasterize_line(line, self.font_path, self.font_size_pt, dpi=self.dpi)
-                if result:
-                    img, w_pt, h_pt = result
-                    if self.align == "right":
-                        x = self._width - w_pt
-                    elif self.align == "center":
-                        x = (self._width - w_pt) / 2.0
-                    else:
-                        x = 0
-                    c.drawImage(ImageReader(img), x, y, width=w_pt, height=h_pt)
+                self._draw_line(c, line, indent, y, self._width - indent, last)

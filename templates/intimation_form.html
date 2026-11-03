@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>ஆய்வு தகவல் நூலகருக்கு அனுப்புதல்</h2>
+  <form method="post" action="{{ url_for('intimation_generate') }}">
+    <label for="file_number">ந.க.எண்.</label>
+    <input type="text" id="file_number" name="file_number" placeholder="எ.கா. 115/அ/2026" required>
+
+    <label for="letter_date">நாள்</label>
+    <input type="date" id="letter_date" name="letter_date" required>
+
+    <label for="library_type">நூலக வகை</label>
+    <select id="library_type" name="library_type" required>
+      <option value="">-- தேர்ந்தெடுக்கவும் --</option>
+      {% for t in library_types %}
+        <option value="{{ t }}">{{ t }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="library_name">நூலகம் பெயர்</label>
+    <select id="library_name" name="library_name" required disabled>
+      <option value="">-- முதலில் நூலக வகையைத் தேர்ந்தெடுக்கவும் --</option>
+    </select>
+
+    <label for="survey_year">ஆய்வு ஆண்டு</label>
+    <select id="survey_year" name="survey_year" required>
+      <option value="">-- தேர்ந்தெடுக்கவும் --</option>
+      {% for y in survey_years %}
+        <option value="{{ y }}">{{ y }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="inspection_date">ஆய்வு நடைபெறவுள்ள நாள்</label>
+    <input type="date" id="inspection_date" name="inspection_date" required>
+
+    <button type="submit">PDF தயார் செய்</button>
+  </form>
+</div>
+
+{% if records %}
+<div class="card">
+  <h3>முந்தைய பதிவுகள்</h3>
+  <table>
+    <tr><th>ந.க.எண்.</th><th>நூலகம்</th><th>ஆய்வு ஆண்டு</th><th>ஆய்வு நாள்</th><th></th></tr>
+    {% for r in records %}
+    <tr>
+      <td>{{ r.file_number }}</td>
+      <td>{{ r.library_name }}</td>
+      <td>{{ r.survey_year }}</td>
+      <td>{{ r.inspection_date.strftime('%d.%m.%Y') }}</td>
+      <td><a class="btn btn-secondary" style="margin-top:0;" href="{{ url_for('intimation_pdf', rec_id=r.id) }}">PDF</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  var libs = {{ libraries | tojson }};
+  var typeSel = document.getElementById('library_type');
+  var nameSel = document.getElementById('library_name');
+
+  function fillNames() {
+    var t = typeSel.value;
+    nameSel.innerHTML = '';
+    if (!t) {
+      nameSel.disabled = true;
+      nameSel.innerHTML = '<option value="">-- முதலில் நூலக வகையைத் தேர்ந்தெடுக்கவும் --</option>';
+      return;
+    }
+    var matches = libs.filter(function (l) { return l.type === t; });
+    var first = document.createElement('option');
+    first.value = '';
+    first.textContent = matches.length ? '-- தேர்ந்தெடுக்கவும் --' : '-- இந்த வகையில் நூலகங்கள் இல்லை --';
+    nameSel.appendChild(first);
+    matches.forEach(function (l) {
+      var o = document.createElement('option');
+      o.value = l.name;
+      o.textContent = l.name;
+      nameSel.appendChild(o);
+    });
+    nameSel.disabled = !matches.length;
+  }
+  typeSel.addEventListener('change', fillNames);
+})();
+</script>
+{% endblock %}
